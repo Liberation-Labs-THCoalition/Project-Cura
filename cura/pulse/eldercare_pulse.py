@@ -34,6 +34,7 @@ class ElderProfile:
     emergency_contacts: list[dict[str, str]] = field(default_factory=list)
     primary_caregiver: dict[str, str] = field(default_factory=dict)
     physician: dict[str, str] = field(default_factory=dict)
+    phone: str = ""
     address: str = ""
     timezone: str = "America/New_York"
     # Learned patterns
