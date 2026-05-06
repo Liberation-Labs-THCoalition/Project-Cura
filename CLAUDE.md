@@ -35,15 +35,16 @@ Phone/SMS (Twilio) ←→ Pulse Engine ←→ Sensor Layer
 
 ```
 cura/
-  pulse/       Eldercare-specific Pulse configuration + check functions
+  pulse/       Eldercare Pulse config, daily enrichments, check-in composer
   sensors/     Browser sensor integration (accelerometer, mic, camera, touch)
   benefits/    Medicare/Medicaid/VA portal navigation
   comms/       Twilio voice/SMS + family notification
-  privacy/     Credential vault, consent tracking, HIPAA compliance
+  privacy/     Scam shield, message scanner, consent tracking, HIPAA compliance
+  integrations/ Open source wrappers (weather, ebook, TTS, voice analysis)
   dashboard/   Family/caregiver web dashboard
   memory/      Elder profile, pattern history, medication tracking
 config/        VALUES.json templates for eldercare
-tests/         Test suite
+tests/         Test suite (80 tests)
 docs/          Architecture spec, regulatory notes
 ```
 
@@ -52,6 +53,10 @@ docs/          Architecture spec, regulatory notes
 No sensors, no app, no PWA. Just phone calls and texts.
 - Morning + evening check-in calls via Twilio
 - SMS medication reminders
+- Daily enrichments (hydration, nutrition, weather, cognitive exercises, pet care, movement, reading)
+- Scam defense (education tips, screening questions, keyword detection, email provenance scanning)
+- Caregiver burnout check-ins (weekly)
+- Home safety assessment (periodic questions over several weeks)
 - Benefits guidance (conversational)
 - Family dashboard (web)
 - Crisis: alert family, they call 911

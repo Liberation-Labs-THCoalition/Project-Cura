@@ -173,7 +173,11 @@ class ScamShield:
         """Recommend action based on detected keywords."""
         if any(kw in keywords for kw in ["wire", "gift card", "money gram", "western union"]):
             return "URGENT: Ask caregiver to verify. Elder may have been asked to send money."
-        if any(kw in keywords for kw in ["keep this secret", "don't tell anyone"]):
+        if any(kw in keywords for kw in [
+            "keep this secret", "don't tell anyone", "not to tell anyone",
+            "keep it between us", "our little secret", "just between us",
+            "don't tell your family", "not to tell your family",
+        ]):
             return "HIGH: Secrecy request is a major red flag. Alert caregiver immediately."
         if any(kw in keywords for kw in ["irs", "social security", "arrest"]):
             return "Government impostor scam likely. Reassure elder that real agencies don't threaten arrest."

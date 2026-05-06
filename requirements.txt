@@ -1,0 +1,27 @@
+# Core — Phase 1 MVP
+twilio>=9.0
+
+# Optional integrations (install as needed)
+# pip install cura[weather]     — Open-Meteo weather alerts
+# pip install cura[ebook]       — EPUB/PDF reading
+# pip install cura[voice]       — Voice prosody analysis
+# pip install cura[tts]         — Local text-to-speech
+# pip install cura[all]         — Everything
+
+# Weather
+aiohttp>=3.9               # Open-Meteo API client
+
+# E-book parsing
+EbookLib>=0.18              # EPUB support
+PyMuPDF>=1.24               # PDF support (AGPL-3.0)
+
+# Voice analysis (pick one)
+opensmile>=2.5              # Gold standard prosody (non-commercial)
+# librosa>=0.10             # Alternative (ISC license)
+
+# Local TTS
+piper-tts>=1.2              # Offline speech synthesis
+
+# Dev
+pytest>=8.0
+pytest-asyncio>=0.23
