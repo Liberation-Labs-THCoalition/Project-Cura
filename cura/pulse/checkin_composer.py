@@ -32,6 +32,7 @@ from cura.pulse.daily_enrichments import (
     HomeSafetyAssessment,
 )
 from cura.privacy.scam_shield import ScamShield
+from cura.sensors.wearable import WearableAnalyzer
 
 
 @dataclass
@@ -40,12 +41,15 @@ class ComposedCheckin:
     greeting: str
     medication_reminder: str
     enrichments: list[Enrichment]
+    wearable_observations: list[str]
     scam_addition: str | None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def all_messages(self) -> list[str]:
         parts = [self.greeting]
+        for obs in self.wearable_observations:
+            parts.append(obs)
         if self.medication_reminder:
             parts.append(self.medication_reminder)
         for e in self.enrichments:
@@ -62,7 +66,11 @@ class CheckinComposer:
         max_enrichments: Maximum enrichments per check-in (default 3)
     """
 
-    def __init__(self, max_enrichments: int = 3) -> None:
+    def __init__(
+        self,
+        max_enrichments: int = 3,
+        wearable_analyzer: WearableAnalyzer | None = None,
+    ) -> None:
         self.max_enrichments = max_enrichments
         self.hydration = HydrationNudge()
         self.nutrition = NutritionNudge()
@@ -73,6 +81,7 @@ class CheckinComposer:
         self.book_reader = BookReader()
         self.scam_shield = ScamShield()
         self.home_safety = HomeSafetyAssessment()
+        self.wearable = wearable_analyzer
         self._checkin_count = 0
 
     def compose_morning(
@@ -83,6 +92,8 @@ class CheckinComposer:
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_morning_greeting()
         med_reminder = pulse_config.generate_medication_reminder()
+
+        wearable_obs = self.wearable.analyze_latest() if self.wearable else []
 
         candidates: list[Enrichment] = []
 
@@ -108,6 +119,7 @@ class CheckinComposer:
             greeting=greeting,
             medication_reminder=med_reminder,
             enrichments=enrichments,
+            wearable_observations=wearable_obs,
             scam_addition=scam,
         )
 
@@ -117,6 +129,8 @@ class CheckinComposer:
         weather: dict | None = None,
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_evening_summary()
+
+        wearable_obs = self.wearable.analyze_latest() if self.wearable else []
 
         candidates: list[Enrichment] = []
 
@@ -140,6 +154,7 @@ class CheckinComposer:
             greeting=greeting,
             medication_reminder="",
             enrichments=enrichments,
+            wearable_observations=wearable_obs,
             scam_addition=scam,
         )
 

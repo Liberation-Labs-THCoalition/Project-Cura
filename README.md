@@ -160,7 +160,82 @@ She's just a friendly voice making sure you're okay.
 
 ---
 
-## Optional Features
+## Optional: Wearable Health Monitoring
+
+If your loved one wears a fitness tracker, Cura can use that data to ask better questions. Instead of a generic "how are you?", she'll say:
+
+> "Your heart rate was a little high last night — 95 bpm. How are you feeling? Any chest discomfort?"
+
+> "It looks like you only got about 4 hours of sleep. Are you feeling tired today?"
+
+**You don't need a wearable to use Cura.** But if you have one, the check-ins get smarter.
+
+### Option A: Fitbit (easiest — most elders already have one)
+
+```bash
+pip install python-fitbit
+```
+
+1. Register a free app at [dev.fitbit.com](https://dev.fitbit.com) (choose "Personal" type)
+2. Follow the OAuth2 flow to get your tokens
+3. Add to your setup:
+
+```python
+from cura.sensors.fitbit_provider import FitbitProvider
+from cura.sensors.wearable import WearableAnalyzer
+
+fitbit = FitbitProvider(
+    client_id="your_client_id",
+    client_secret="your_client_secret",
+    access_token="your_access_token",
+    refresh_token="your_refresh_token",
+)
+
+# Cura will pull data every 15 minutes automatically
+analyzer = WearableAnalyzer()
+reading = await fitbit.fetch_daily_summary()
+analyzer.add_reading(reading)
+
+# Pass the analyzer to the check-in composer
+composer = CheckinComposer(wearable_analyzer=analyzer)
+```
+
+### Option B: Budget bands ($30 — Amazfit, Xiaomi, PineTime)
+
+For elders who don't have a wearable yet, an **Amazfit Band 5** (~$30) gives heart rate, sleep, steps, and SpO2. Pair it with [Gadgetbridge](https://gadgetbridge.org/) (free, open source Android app) on any cheap Android phone:
+
+1. Install Gadgetbridge from F-Droid or the Play Store
+2. Pair the band in Gadgetbridge
+3. Enable database export in Gadgetbridge settings
+4. Copy the database to the machine running Cura
+
+```python
+from cura.sensors.gadgetbridge_provider import GadgetbridgeProvider
+
+gadgetbridge = GadgetbridgeProvider(
+    db_path="/path/to/gadgetbridge_export.db",
+)
+reading = await gadgetbridge.fetch_daily_summary()
+```
+
+Gadgetbridge supports 50+ devices — if your elder already has a band, it probably works.
+
+### What Cura watches for
+
+| Signal | What it means | What Cura does |
+|--------|--------------|----------------|
+| Heart rate elevated | Possible stress, pain, illness | Asks how they're feeling, mentions the reading |
+| Heart rate low | Possible medication effect | Asks about dizziness |
+| SpO2 below 92% | Possible breathing difficulty | Asks about breathing, alerts caregiver |
+| Poor sleep (<5 hours) | Fatigue risk, fall risk | Asks if they're tired, suggests rest |
+| Very low activity | Possible illness, depression | Gently encourages movement |
+| Fall detected | Emergency | Calls all emergency contacts immediately |
+
+Cura **never diagnoses**. She notices and asks. The family and doctor decide what it means.
+
+---
+
+## Other Optional Features
 
 These are extras you can add if you want them. None are required.
 

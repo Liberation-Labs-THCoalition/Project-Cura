@@ -23,6 +23,7 @@ class TestComposedCheckin:
             greeting="Good morning",
             medication_reminder="Take your pills",
             enrichments=[],
+            wearable_observations=[],
             scam_addition=None,
         )
         msgs = checkin.all_messages
@@ -35,6 +36,7 @@ class TestComposedCheckin:
             greeting="Hi",
             medication_reminder="",
             enrichments=[Enrichment("test", "Drink water", 0.5)],
+            wearable_observations=[],
             scam_addition="Safety tip: don't click links",
         )
         msgs = checkin.all_messages
