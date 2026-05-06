@@ -37,6 +37,26 @@ No app to install. No tablet to learn. Just a phone that rings.
 
 ---
 
+## Try It Right Now
+
+No Twilio, no setup, no account. Just run this:
+
+```bash
+git clone https://github.com/Liberation-Labs-THCoalition/Project-Cura.git
+cd Project-Cura
+python -m cura console --name Margaret --demo --medications Lisinopril Metformin
+```
+
+You'll see exactly what a morning check-in sounds like. Then try a conversation:
+
+```bash
+python -m cura console --name Margaret
+```
+
+Cura will greet you and you can chat — ask about medications, report a suspicious call, play a word game, or just talk. Type `bye` when you're done.
+
+---
+
 ## For Families: Getting Started
 
 ### What You Need
@@ -48,88 +68,84 @@ No app to install. No tablet to learn. Just a phone that rings.
 ### Step 1: Install
 
 ```bash
-# Download Cura
 git clone https://github.com/Liberation-Labs-THCoalition/Project-Cura.git
 cd Project-Cura
-
-# Install Python dependencies
 pip install -r requirements.txt
 ```
 
-### Step 2: Set Up Your Loved One's Profile
+### Step 2: Create a Config File
 
-Create a file called `my_elder.py` (or whatever name you like):
+Create a file called `margaret.json`:
 
-```python
-from cura.pulse.eldercare_pulse import ElderProfile
-
-margaret = ElderProfile(
-    name="Margaret Chen",
-    preferred_name="Margaret",       # What she likes to be called
-    phone="+15551234567",            # Her phone number
-
-    medications=[
-        {"name": "Lisinopril", "time": "morning"},
-        {"name": "Metformin", "time": "morning"},
-        {"name": "Amlodipine", "time": "evening PM"},
-    ],
-
-    emergency_contacts=[
-        {"name": "Sarah Chen", "phone": "+15559876543", "relation": "daughter"},
-        {"name": "Tom Chen", "phone": "+15559876544", "relation": "son"},
-    ],
-
-    primary_caregiver={
-        "name": "Sarah Chen",
-        "phone": "+15559876543",
-    },
-
-    address="123 Elm Street, Springfield, IL",
-
-    morning_time=8,      # When she wakes up (24-hour clock)
-    evening_time=20,     # When she winds down
-)
+```json
+{
+  "name": "Margaret Chen",
+  "preferred_name": "Margaret",
+  "phone": "+15551234567",
+  "medications": [
+    {"name": "Lisinopril", "time": "morning"},
+    {"name": "Metformin", "time": "morning"},
+    {"name": "Amlodipine", "time": "evening PM"}
+  ],
+  "emergency_contacts": [
+    {"name": "Sarah Chen", "phone": "+15559876543", "relation": "daughter"},
+    {"name": "Tom Chen", "phone": "+15559876544", "relation": "son"}
+  ],
+  "primary_caregiver": {"name": "Sarah Chen", "phone": "+15559876543"},
+  "address": "123 Elm Street, Springfield, IL",
+  "morning_time": 8,
+  "evening_time": 20,
+  "twilio": {
+    "account_sid": "your_sid_here",
+    "auth_token": "your_token_here",
+    "phone_number": "+15550001234"
+  }
+}
 ```
 
 You know your loved one best. Set the times to match their routine.
 
-### Step 3: Configure Twilio
-
-Set these environment variables (or put them in a `.env` file):
+### Step 3: Test It
 
 ```bash
-export TWILIO_ACCOUNT_SID="your_account_sid"
-export TWILIO_AUTH_TOKEN="your_auth_token"
-export TWILIO_PHONE_NUMBER="+15550001234"   # Your Twilio number
+python -m cura run --config margaret.json --dry-run
 ```
 
-You'll find these values in your Twilio dashboard after signing up.
-
-### Step 4: Test It
-
-Before going live, run in dry-run mode to see what Cura would say:
+This shows what Cura would say without making any real calls. When you're ready:
 
 ```bash
-python -m pytest tests/ -q    # Make sure everything works
+python -m cura run --config margaret.json
 ```
 
-```python
-from cura.comms.voice import CuraVoice
-from cura.pulse.eldercare_pulse import EldercarePulseConfig
-from cura.pulse.checkin_composer import CheckinComposer
+Cura will call Margaret every morning and evening, on schedule.
 
-# Dry run — no actual calls
-voice = CuraVoice(dry_run=True)
-config = EldercarePulseConfig(margaret)
-composer = CheckinComposer()
+### Step 4: Let Margaret Call Cura
 
-# See what a morning check-in looks like
-checkin = composer.compose_morning(config, weather={"temp_f": 85})
-for msg in checkin.all_messages:
-    print(f"  Cura: {msg}")
+Start the webhook server so Twilio can process Margaret's responses — and so Margaret can call Cura whenever she wants:
+
+```bash
+python -m cura webhook --port 5000 --elder-name Margaret
 ```
 
-When you're happy with it, remove `dry_run=True` and Cura will make real calls.
+In your Twilio dashboard, set your phone number's voice webhook to `http://your-server:5000/voice/inbound`. Now Margaret can pick up the phone and call Cura anytime — to chat, ask about her medications, report a weird call, or just hear a familiar voice.
+
+### What happens on a call
+
+When Cura calls Margaret:
+1. Cura greets her by name and asks how she's feeling
+2. Reminds her about medications
+3. Shares a weather warning, safety tip, or fun question
+4. Waits for her response (keypad or voice)
+
+When Margaret responds:
+- **Presses 1** → Cura notes she took her medications
+- **Presses 2** → Cura alerts the family immediately
+- **Says something about a scam** → Cura reassures her and flags it
+- **Says she needs help** → Cura contacts every emergency contact
+
+When Margaret calls Cura:
+- Cura answers warmly and offers to chat, answer medication questions, hear about suspicious contacts, or get help
+- Margaret can just talk — Cura listens and responds
 
 ---
 
