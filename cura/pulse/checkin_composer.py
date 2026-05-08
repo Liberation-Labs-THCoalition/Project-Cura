@@ -33,6 +33,7 @@ from cura.pulse.daily_enrichments import (
 )
 from cura.privacy.scam_shield import ScamShield
 from cura.sensors.wearable import WearableAnalyzer
+from cura.memory.companion_memory import CompanionMemory
 
 
 @dataclass
@@ -40,6 +41,7 @@ class ComposedCheckin:
     """A fully assembled check-in ready for delivery."""
     greeting: str
     medication_reminder: str
+    memory_touches: list[str]
     enrichments: list[Enrichment]
     wearable_observations: list[str]
     scam_addition: str | None
@@ -48,6 +50,8 @@ class ComposedCheckin:
     @property
     def all_messages(self) -> list[str]:
         parts = [self.greeting]
+        for touch in self.memory_touches:
+            parts.append(touch)
         for obs in self.wearable_observations:
             parts.append(obs)
         if self.medication_reminder:
@@ -70,6 +74,7 @@ class CheckinComposer:
         self,
         max_enrichments: int = 3,
         wearable_analyzer: WearableAnalyzer | None = None,
+        memory: CompanionMemory | None = None,
     ) -> None:
         self.max_enrichments = max_enrichments
         self.hydration = HydrationNudge()
@@ -82,6 +87,7 @@ class CheckinComposer:
         self.scam_shield = ScamShield()
         self.home_safety = HomeSafetyAssessment()
         self.wearable = wearable_analyzer
+        self.memory = memory
         self._checkin_count = 0
 
     def compose_morning(
@@ -114,10 +120,12 @@ class CheckinComposer:
 
         enrichments = self._select(candidates)
         scam = self.scam_shield.get_checkin_addition()
+        memory_touches = self._memory_touches(pulse_config.profile.display_name)
 
         return ComposedCheckin(
             greeting=greeting,
             medication_reminder=med_reminder,
+            memory_touches=memory_touches,
             enrichments=enrichments,
             wearable_observations=wearable_obs,
             scam_addition=scam,
@@ -149,14 +157,59 @@ class CheckinComposer:
 
         enrichments = self._select(candidates)
         scam = self.scam_shield.get_checkin_addition()
+        memory_touches = self._memory_touches(pulse_config.profile.display_name)
 
         return ComposedCheckin(
             greeting=greeting,
             medication_reminder="",
+            memory_touches=memory_touches,
             enrichments=enrichments,
             wearable_observations=wearable_obs,
             scam_addition=scam,
         )
+
+    def _memory_touches(self, name: str) -> list[str]:
+        """Generate conversational references from memory.
+
+        These are the human touches that make Cura a companion:
+        "How was Sarah's birthday?" instead of a generic greeting.
+        Max 2 per check-in — warm, not interrogating.
+        """
+        if not self.memory:
+            return []
+
+        touches = []
+
+        events = self.memory.unreferenced_events()
+        for event in events[:1]:
+            people = " and ".join(event.people_involved) if event.people_involved else ""
+            if people:
+                touches.append(
+                    f"{name}, you mentioned {event.description} "
+                    f"coming up{' with ' + people if people else ''}. How did it go?"
+                )
+            else:
+                touches.append(
+                    f"You mentioned {event.description} was coming up. How did it go?"
+                )
+            self.memory.mark_event_reminded(event.description)
+
+        followups = self.memory.pending_followups()
+        for f in followups[:1]:
+            if len(touches) >= 2:
+                break
+            touches.append(f"Last time, you mentioned {f.content}. Any update on that?")
+            f.follow_up = False
+
+        if not touches:
+            moods = self.memory.recent_mood(3)
+            if moods and moods[-1].mood in ("worried", "sad", "lonely"):
+                touches.append(
+                    f"I've been thinking about you, {name}. "
+                    f"How are you feeling today?"
+                )
+
+        return touches[:2]
 
     def _select(self, candidates: list[Enrichment]) -> list[Enrichment]:
         """Select top enrichments by priority, up to max."""

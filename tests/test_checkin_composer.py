@@ -23,6 +23,7 @@ class TestComposedCheckin:
             greeting="Good morning",
             medication_reminder="Take your pills",
             enrichments=[],
+            memory_touches=[],
             wearable_observations=[],
             scam_addition=None,
         )
@@ -36,6 +37,7 @@ class TestComposedCheckin:
             greeting="Hi",
             medication_reminder="",
             enrichments=[Enrichment("test", "Drink water", 0.5)],
+            memory_touches=[],
             wearable_observations=[],
             scam_addition="Safety tip: don't click links",
         )
