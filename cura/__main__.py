@@ -50,7 +50,38 @@ def main() -> None:
     run_parser.add_argument("--dry-run", action="store_true",
                             help="Log calls without actually dialing")
 
+    # Setup, rehearsal, and phone-service commands. These exist because the
+    # wizard's closing screen names them; a setup flow that ends by telling
+    # someone to run a command that does not exist is worse than no wizard.
+    subparsers.add_parser("setup", help="Set up Cura by answering a few questions")
+
+    rehearse_parser = subparsers.add_parser(
+        "rehearse", help="Hear what a check-in will sound like. Nothing is dialled.")
+    rehearse_parser.add_argument("--config", type=str, default=None,
+                                 help="Defaults to the one setup created")
+
+    subparsers.add_parser(
+        "add-phone", help="Turn on real phone calls (needs a Twilio account)")
+
     args = parser.parse_args()
+
+    if args.command == "setup":
+        from cura.setup.wizard import run as setup_run
+        sys.exit(setup_run())
+
+    if args.command == "rehearse":
+        cfg = args.config or _default_config_path()
+        if not cfg:
+            print("\n  Cura isn't set up yet. Run this first:\n")
+            print("      cura setup\n")
+            sys.exit(1)
+        _preview(cfg)
+        sys.exit(0)
+
+    if args.command == "add-phone":
+        from cura.setup.add_phone import run as phone_run
+        sys.exit(phone_run())
+
 
     if args.command == "console":
         from cura.console import main as console_main
@@ -80,6 +111,68 @@ def main() -> None:
         print("\nQuick start:")
         print("  python -m cura console --name Margaret          # Chat with Cura")
         print("  python -m cura console --name Margaret --demo   # See a demo check-in")
+
+
+
+def _default_config_path():
+    """The config the wizard wrote, if there is exactly one obvious choice."""
+    import json
+    from pathlib import Path as _P
+    state = _P.home() / ".cura" / "setup-progress.json"
+    try:
+        p = json.loads(state.read_text()).get("config_path")
+        if p and _P(p).exists():
+            return p
+    except Exception:
+        pass
+    found = sorted((_P.home() / ".cura").glob("*.json"))
+    found = [f for f in found if f.name != "setup-progress.json"]
+    return str(found[0]) if len(found) == 1 else None
+
+
+def _preview(config_path: str) -> None:
+    """Print both check-ins and return. Never starts a scheduler."""
+    import json as _json
+    with open(config_path) as f:
+        data = _json.load(f)
+    data.pop("twilio", None)
+
+    from cura.pulse.eldercare_pulse import ElderProfile, EldercarePulseConfig
+    from cura.pulse.checkin_composer import CheckinComposer
+
+    profile = ElderProfile(
+        name=data.get("name", ""), preferred_name=data.get("preferred_name", ""),
+        phone=data.get("phone", ""), medications=data.get("medications", []),
+        emergency_contacts=data.get("emergency_contacts", []),
+        primary_caregiver=data.get("primary_caregiver", {}),
+        address=data.get("address", ""),
+        morning_time=data.get("morning_time", 8),
+        evening_time=data.get("evening_time", 20),
+    )
+    cfg = EldercarePulseConfig(profile)
+    composer = CheckinComposer()
+    who = profile.display_name
+
+    print()
+    print(f"  This is what {who} will hear. Nothing is being dialled.")
+    print()
+    print(f"  In the morning, around {profile.morning_time}:00 —")
+    print()
+    for msg in composer.compose_morning(cfg).all_messages:
+        print(f"      Cura:  {msg}")
+    print()
+    try:
+        evening = composer.compose_evening(cfg).all_messages
+    except Exception:
+        evening = []
+    if evening:
+        print(f"  In the evening, around {profile.evening_time}:00 —")
+        print()
+        for msg in evening:
+            print(f"      Cura:  {msg}")
+        print()
+    print("  If that sounds right, you're ready.")
+    print()
 
 
 def _run_scheduled(config_path: str, dry_run: bool = False) -> None:

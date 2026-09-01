@@ -1,5 +1,6 @@
 # Core — Phase 1 MVP
 twilio>=9.0
+APScheduler>=3.10           # scheduled check-ins; without it `cura run` cannot schedule
 
 # Optional integrations (install as needed)
 # pip install cura[weather]     — Open-Meteo weather alerts

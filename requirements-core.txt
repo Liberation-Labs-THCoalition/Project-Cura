@@ -1,0 +1,9 @@
+# Everything Cura needs to run. Nothing else.
+#
+# requirements.txt lists optional extras (opensmile, PyMuPDF, piper-tts, pytest)
+# as though they were required. Installing that set on a home laptop means
+# minutes of compiling and a real chance of failure -- before the person has
+# seen Cura do anything. Someone setting this up for a parent has a small
+# window and no patience budget for a build error. Start here.
+twilio>=9.0
+APScheduler>=3.10
