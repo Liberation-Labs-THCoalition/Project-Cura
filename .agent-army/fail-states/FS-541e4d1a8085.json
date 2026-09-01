@@ -1,0 +1,39 @@
+{
+  "id": "FS-541e4d1a8085",
+  "class": "onboarding.window-path-dead-end",
+  "kind": "code",
+  "title": "The setup window ends at 'Cura is ready.' and never says how to turn real calls on",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/gui.py",
+    "symbol": "finish"
+  },
+  "found_by": "code-reviewer (review-of-reviews pass)",
+  "found_at": "2026-09-01T22:25:43Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "read of gui.py's finish screen against wizard.py's closing screen",
+  "triggers": [
+    "cura setup --window"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-541e4d1a8085.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "mentions none of add-phone"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:25:43Z"
+  },
+  "observed_at_discovery": "gui.py's finish() screen prints 'Cura is ready.' and offers exactly two buttons, 'Hear a practice call' and 'Close'. The string 'add-phone' does not occur anywhere in gui.py, nor does 'cura run'. wizard.py's closing screen prints both. Without add-phone the config has no twilio block and CuraVoice dials nobody; without cura run nothing is scheduled at all. install.sh advertises 'Cura's setup window' and the packaging targets open `cura setup --window`, so the advertised route ends with a caregiver told on screen that Cura is ready while no call will ever be placed. source_artifact is omitted because cura/setup/gui.py is untracked at HEAD and would book ERROR on every replay; commit gui.py and this case anchors properly. pytest exit 1, 1 failed 1 passed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

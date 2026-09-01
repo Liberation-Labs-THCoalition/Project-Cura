@@ -1,0 +1,243 @@
+# Builds the thing he downloads.
+#
+# PyInstaller cannot cross-compile -- its docs are explicit: "you must install
+# PyInstaller on each platform and bundle your app separately on each." So the
+# Mac artifact comes from a Mac runner and the Windows artifact from a Windows
+# runner, and neither can be produced on the Linux box where this was written.
+#
+# Signing is OPTIONAL here and OFF by default, so a fork with no secrets still
+# gets a working build. But read packaging/README.md before shipping an unsigned
+# artifact to an actual caregiver: macOS shows a dialog whose only two buttons
+# are "Move to Trash" and "Done", and that is where his setup ends.
+
+name: Desktop builds
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths: ['packaging/**', 'cura/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['packaging/**', 'cura/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+env:
+  CURA_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.1.0-dev' }}
+
+jobs:
+  # Fast gate. Catches a broken spec in ~2 minutes so the slow signed builds
+  # never start on a spec that cannot even parse.
+  validate-spec:
+    name: Spec builds and runs (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Tcl/Tk
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-core.txt pyinstaller==6.22.2
+
+      - name: Build and selftest
+        run: python packaging/build_desktop.py
+
+  macos:
+    name: macOS .app
+    runs-on: macos-14
+    # The `secrets` context is not available in every `if:` position, so the
+    # answers to "do we have a certificate" and "can we notarize" are computed
+    # once here and read as plain strings below.
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
+      HAS_NOTARY: ${{ secrets.MACOS_NOTARY_APPLE_ID != '' && secrets.MACOS_SIGN_IDENTITY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # NOT actions/setup-python. Two reasons, both load-bearing:
+      #   1. macOS has shipped no usable system Python since 12.3 removed
+      #      /usr/bin/python, so there is nothing on the machine to fall back to.
+      #   2. Tcl/Tk on the macOS runners has a long history of being absent or
+      #      unloadable (actions/runner-images #4931, #11074). python.org's
+      #      installers "link to their own built-in Tcl/Tk 8.6 frameworks and do
+      #      not use external Tcl/Tk frameworks", which is the only arrangement
+      #      that reliably ends up inside the bundle.
+      #   3. The universal2 installer is what makes a universal2 build possible,
+      #      so one download runs on both Intel and Apple Silicon Macs. He should
+      #      not have to know which Mac he owns.
+      - name: Install universal2 Python from python.org
+        env:
+          PY_VERSION: '3.13.11'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/python.pkg \
+            "https://www.python.org/ftp/python/${PY_VERSION}/python-${PY_VERSION}-macos11.pkg"
+          sudo installer -pkg /tmp/python.pkg -target /
+          PYBIN="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+          echo "PYBIN=$PYBIN" >> "$GITHUB_ENV"
+          "$PYBIN" -VV
+          file -b "$(readlink -f "$PYBIN")"
+
+      # Hard gate. A GUI app built by a Python that cannot import tkinter starts
+      # and dies with no window, and nothing downstream would notice.
+      - name: Verify Tcl/Tk and universal2
+        run: |
+          set -euo pipefail
+          "$PYBIN" -c "import tkinter; print('Tk', tkinter.TkVersion)"
+          file -b "$(readlink -f "$PYBIN")" | tee /tmp/arch.txt
+          grep -q "universal" /tmp/arch.txt || {
+            echo "::error::Python is not universal2; the build would run on only one kind of Mac."
+            exit 1
+          }
+
+      - name: Install build dependencies
+        run: |
+          "$PYBIN" -m pip install --upgrade pip
+          "$PYBIN" -m pip install -r requirements-core.txt pyinstaller==6.22.2
+
+      # ---- optional signing -------------------------------------------------
+      # Set these three repository secrets to get a signed, notarized build:
+      #   MACOS_CERT_P12         base64 of a "Developer ID Application" .p12
+      #   MACOS_CERT_PASSWORD    the .p12 export password
+      #   MACOS_SIGN_IDENTITY    e.g. "Developer ID Application: Name (TEAMID)"
+      # And these three to notarize (without them the app is signed but still
+      # blocked on download -- signing alone is not enough since macOS 10.15):
+      #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_PASSWORD (app-specific), MACOS_TEAM_ID
+      - name: Import signing certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          echo "$CERT_P12" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k build.keychain -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain >/dev/null
+          rm -f /tmp/cert.p12
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Build
+        env:
+          CURA_TARGET_ARCH: universal2
+          CURA_CODESIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          "$PYBIN" packaging/build_desktop.py
+
+      # Signing is necessary but NOT sufficient. Gatekeeper checks for a
+      # notarization ticket; a Developer ID signature without one still gets
+      # "Apple could not verify ...". Notarize, then staple the ticket into the
+      # bundle so it is checked offline, then re-zip the stapled bundle.
+      - name: Notarize and staple
+        if: env.HAS_NOTARY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ZIP="dist/Cura-Setup-macOS-${CURA_VERSION}.zip"
+          xcrun notarytool submit "$ZIP" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+            --team-id "$TEAM_ID" --wait --timeout 30m
+          xcrun stapler staple "dist/Cura Setup.app"
+          rm -f "$ZIP"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Cura Setup.app" "$ZIP"
+          # Ask Gatekeeper directly rather than assuming. This is the same
+          # check the man's Mac performs when he double-clicks.
+          spctl --assess --type execute --verbose=4 "dist/Cura Setup.app"
+
+      - name: Report what a downloader will see
+        run: |
+          set -euo pipefail
+          echo "--- codesign ---"
+          codesign -dv --verbose=4 "dist/Cura Setup.app" 2>&1 || true
+          echo "--- gatekeeper assessment ---"
+          if spctl --assess --type execute --verbose=4 "dist/Cura Setup.app" 2>&1; then
+            echo "PASS: this opens on his Mac with no warning."
+          else
+            echo "::warning::UNSIGNED OR UNNOTARIZED. On download, macOS shows"
+            echo "::warning::'Apple could not verify \"Cura Setup\" is free of malware'"
+            echo "::warning::with only 'Move to Trash' and 'Done'. Do not ship this."
+          fi
+          shasum -a 256 dist/*.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cura-Setup-macOS
+          path: dist/*.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows .exe
+    runs-on: windows-latest
+    env:
+      HAS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Prove it rather than assume it. The Windows runner images have carried
+      # Tcl/Tk reliably, but "has always worked" is not a check.
+      - name: Verify Tcl/Tk
+        run: python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-core.txt pyinstaller==6.22.2
+
+      - name: Build
+        run: python packaging/build_desktop.py
+
+      # Optional. Azure Artifact Signing (formerly Trusted Signing) is the cheap
+      # route -- see packaging/README.md. Without it SmartScreen shows "Windows
+      # protected your PC" on the downloaded file.
+      - name: Sign
+        if: env.HAS_SIGNING == 'true'
+        uses: azure/trusted-signing-action@v0.5.9
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Report signature state
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist\*.exe | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "Signature status: $($sig.Status)"
+          if ($sig.Status -ne 'Valid') {
+            Write-Host "::warning::UNSIGNED. SmartScreen will show 'Windows protected your PC'"
+            Write-Host "::warning::and he must click 'More info' then 'Run anyway'."
+          }
+          Get-FileHash $exe.FullName -Algorithm SHA256 | Format-List
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cura-Setup-Windows
+          path: dist/*.exe
+          if-no-files-found: error

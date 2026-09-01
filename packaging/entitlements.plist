@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements. Only used when CURA_CODESIGN_IDENTITY is set,
+  because notarization requires the hardened runtime and the hardened runtime
+  breaks a frozen Python app without these three.
+
+  Each one is here for a stated reason. Do not add more without one: every
+  entitlement widens what this app is allowed to do on someone's machine, and
+  this app runs on the machine of a man caring for his wife.
+-->
+<plist version="1.0">
+<dict>
+    <!-- CPython's ctypes and the PyInstaller bootloader generate and execute
+         code at runtime. Without this the hardened runtime kills the process
+         at launch with no user-visible message. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- The bundle loads its own collected .dylib and .so files (Tcl, Tk,
+         CPython extension modules). They are signed with the same identity,
+         but library validation still rejects some of them inside a frozen
+         layout. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- PyInstaller's bootloader sets DYLD_LIBRARY_PATH for the child process
+         it launches. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+</dict>
+</plist>

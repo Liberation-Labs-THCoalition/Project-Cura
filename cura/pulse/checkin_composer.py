@@ -49,6 +49,13 @@ class ComposedCheckin:
 
     @property
     def all_messages(self) -> list[str]:
+        """The check-in as consecutive spoken lines.
+
+        The greeting says the elder's name; nothing after it may open with the
+        name again. Two lines in a row that both start "Bob," is the point a
+        companion stops sounding like a person and starts sounding like a
+        machine, which for a listener with dementia is the whole product.
+        """
         parts = [self.greeting]
         for touch in self.memory_touches:
             parts.append(touch)
@@ -97,7 +104,7 @@ class CheckinComposer:
         yesterday_topic: str = "",
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_morning_greeting()
-        med_reminder = pulse_config.generate_medication_reminder()
+        med_reminder = pulse_config.generate_medication_reminder("morning")
 
         wearable_obs = self.wearable.analyze_latest() if self.wearable else []
 
@@ -185,8 +192,8 @@ class CheckinComposer:
             people = " and ".join(event.people_involved) if event.people_involved else ""
             if people:
                 touches.append(
-                    f"{name}, you mentioned {event.description} "
-                    f"coming up{' with ' + people if people else ''}. How did it go?"
+                    f"You mentioned {event.description} "
+                    f"coming up with {people}. How did it go?"
                 )
             else:
                 touches.append(

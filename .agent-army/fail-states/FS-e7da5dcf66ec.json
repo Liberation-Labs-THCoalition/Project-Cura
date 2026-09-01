@@ -1,0 +1,46 @@
+{
+  "id": "FS-e7da5dcf66ec",
+  "class": "test.mutation-escape.escalation",
+  "kind": "code",
+  "title": "The only tests of the escalation path assert dry-run constants, so no escalation failure can fail them",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "tests/test_voice.py",
+    "symbol": "TestDryRunCalls"
+  },
+  "found_by": "test-engineer",
+  "found_at": "2026-09-01T23:40:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "mutation testing: three independent mutants of cura/comms/voice.py replayed against tests/test_voice.py in a hermetic copy",
+  "source_artifact": {
+    "path": "tests/test_voice.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "caregiver_phone = \"\"",
+    "crisis_alert dials profile.phone instead of contact['phone']",
+    "morning_checkin medication block removed",
+    "alert_caregiver send_sms removed"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-e7da5dcf66ec.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "passes against a CuraVoice that"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T23:40:00Z"
+  },
+  "observed_at_discovery": "CuraVoice(dry_run=True).call() returns answered=True, call_sid='dry_run' unconditionally and send_sms() returns delivered=True unconditionally; every assertion in TestDryRunCalls reads one of those constants and none reads to_number. Observed: with alert_caregiver's caregiver_phone forced to '', 157 passed. With crisis_alert dialling the elder's own number instead of each emergency contact, 157 passed. With the medication block deleted from morning_checkin, 157 passed (test_morning_checkin's disjunction is satisfied by the constant line 'Press 1 if you've taken your medications', which always contains 'medication'). With alert_caregiver's SMS never sent, 157 passed. Repro exit 1, 1 failed 1 passed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

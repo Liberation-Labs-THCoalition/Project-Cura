@@ -1,0 +1,44 @@
+{
+  "id": "FS-01b7dacc128d",
+  "class": "companion.memory-never-wired",
+  "kind": "code",
+  "title": "Every production CheckinComposer is built with no memory and no wearable, so Cura remembers nothing",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/__main__.py",
+    "symbol": "_run_scheduled"
+  },
+  "found_by": "code-reviewer (review-of-reviews pass)",
+  "found_at": "2026-09-01T22:25:43Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "AST read of both construction sites + live compose_morning with and without a memory",
+  "triggers": [
+    "cura rehearse",
+    "cura run"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-01b7dacc128d.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "contains no memory touch"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:25:43Z"
+  },
+  "observed_at_discovery": "CheckinComposer() is constructed bare at cura/__main__.py:159 (rehearse) and :239 (the daily run), and at cura_mcp_server.py:107, so memory=None and wearable_analyzer=None in every shipped path. _memory_touches() returns [] unconditionally and wearable_observations is always []. Observed live: with a memory holding an unreferenced event, compose_morning names it ('How did it go?'); with the composer as cura run actually builds it, the same event appears nowhere. The docstring on _memory_touches calls these 'the human touches that make Cura a companion'. Nothing the wearable sees \u2014 including a fall \u2014 reaches a check-in either. pytest exit 1, 2 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "source_artifact": {
+    "path": "cura/__main__.py",
+    "git_rev": "57cb15c"
+  }
+}

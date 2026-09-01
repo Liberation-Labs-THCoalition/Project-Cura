@@ -137,3 +137,109 @@ class TestEldercarePulseConfig:
             severity=0.6,
         )
         assert config.assess_crisis_level(obs) == "alert_caregiver"
+
+
+class TestMedicationSlots:
+    """A medication must be named at the check-in it is recorded for, and at
+    no other. A wrongly-timed reminder to someone with dementia is a second
+    dose, not a wording slip."""
+
+    def test_morning_medication_not_named_in_the_evening(self):
+        config = EldercarePulseConfig(
+            _make_profile(medications=[{"name": "Donepezil", "time": "morning"}])
+        )
+        assert "Donepezil" in config.generate_medication_reminder("morning")
+        assert config.generate_medication_reminder("evening") == ""
+        assert "Donepezil" not in config.generate_evening_summary()
+
+    def test_evening_medication_not_named_in_the_morning(self):
+        config = EldercarePulseConfig(
+            _make_profile(medications=[{"name": "Amlodipine", "time": "evening"}])
+        )
+        assert config.generate_medication_reminder("morning") == ""
+        assert "Amlodipine" in config.generate_medication_reminder("evening")
+        assert "Amlodipine" in config.generate_evening_summary()
+
+    def test_default_profile_splits_by_slot(self):
+        config = EldercarePulseConfig(_make_profile())
+        morning = config.generate_medication_reminder("morning")
+        evening = config.generate_medication_reminder("evening")
+        assert "Lisinopril" in morning and "Metformin" in morning
+        assert "Amlodipine" not in morning
+        assert evening == "It's time for your Amlodipine."
+
+    def test_twice_daily_is_named_at_both(self):
+        config = EldercarePulseConfig(
+            _make_profile(medications=[{"name": "Metformin", "time": "twice daily"}])
+        )
+        assert "Metformin" in config.generate_medication_reminder("morning")
+        assert "Metformin" in config.generate_medication_reminder("evening")
+
+    def test_clock_times_resolve_to_a_slot(self):
+        config = EldercarePulseConfig(
+            _make_profile(medications=[
+                {"name": "Levothyroxine", "time": "7am"},
+                {"name": "Simvastatin", "time": "9pm"},
+                {"name": "Warfarin", "time": "18:00"},
+            ])
+        )
+        morning = config.generate_medication_reminder("morning")
+        evening = config.generate_medication_reminder("evening")
+        assert "Levothyroxine" in morning
+        assert "Simvastatin" not in morning and "Warfarin" not in morning
+        assert "Simvastatin" in evening and "Warfarin" in evening
+
+    def test_unknown_time_is_never_announced(self):
+        """Unknown timing produces silence, not a guess.
+
+        This replaces an earlier rule that defaulted the unknown case to the
+        morning check-in, on the reasoning that a missed reminder beats a
+        doubled one. Sound, but it misses a case: a drug actually taken at
+        night, recorded with no time, would be announced at 9am. That is not a
+        missed reminder — it is a prompt at the wrong time, carrying the same
+        double-dose risk the default existed to prevent.
+
+        Silence is recoverable; the caregiver still gives the medication.
+        A confident prompt at the wrong hour, to someone who cannot remember
+        whether they already took it, is not.
+        """
+        for value in ({"name": "Aspirin"}, {"name": "Aspirin", "time": ""},
+                      {"name": "Aspirin", "time": "as needed"}):
+            config = EldercarePulseConfig(_make_profile(medications=[value]))
+            slots = [
+                s for s in ("morning", "evening")
+                if "Aspirin" in config.generate_medication_reminder(s)
+            ]
+            assert slots == [], value
+
+    def test_unknown_timing_is_surfaced_not_just_omitted(self):
+        """Silence must be visible. If Cura is not reminding about a drug, the
+        caregiver has to be told, or he will assume that it is."""
+        from cura.pulse.eldercare_pulse import unknown_timing_medications
+        meds = [{"name": "Donepezil", "time": ""},
+                {"name": "Lisinopril", "time": "morning"}]
+        assert unknown_timing_medications(meds) == ["Donepezil"]
+
+    def test_no_medication_is_silently_dropped(self):
+        meds = [{"name": f"Drug{i}", "time": "morning"} for i in range(5)]
+        config = EldercarePulseConfig(_make_profile(medications=meds))
+        reminder = config.generate_medication_reminder("morning")
+        for m in meds:
+            assert m["name"] in reminder
+
+
+class TestNameIsNotDoubled:
+    """The greeting says the name. Nothing that follows it may say it again
+    back to back — that is the point a companion stops sounding like a person."""
+
+    def test_medication_reminder_does_not_open_with_the_name(self):
+        config = EldercarePulseConfig(_make_profile())
+        assert not config.generate_medication_reminder("morning").startswith("Margaret")
+
+    def test_evening_summary_says_the_name_once(self):
+        config = EldercarePulseConfig(
+            _make_profile(medications=[{"name": "Amlodipine", "time": "evening"}])
+        )
+        summary = config.generate_evening_summary()
+        assert summary.count("Margaret") == 1, summary
+        assert "Margaret. Margaret," not in summary

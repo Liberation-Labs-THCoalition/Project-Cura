@@ -1,0 +1,44 @@
+{
+  "id": "FS-41eb5e1d0c36",
+  "class": "secrets.credential-tempfile-world-readable",
+  "kind": "code",
+  "title": "The credential temp file is created 0644 and the chmod that fixes it runs too late and can fail silently",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/add_phone.py",
+    "symbol": "run"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "replay of add_phone.py's exact write sequence with stat(2) at each step, plus source read",
+  "source_artifact": {
+    "path": "cura/setup/add_phone.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "cura add-phone (temp-file write / os.replace / chmod sequence)"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-41eb5e1d0c36.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "carrying the Twilio auth token is created",
+      "swallows a failed chmod"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "Replaying lines 124-131 of add_phone.py: the temp file holding the full auth token is created 0664 (0644 under umask 022); os.replace carries that mode onto the config, which is 0664 until the chmod(0o600) on the next line. Confirmed by stat: 'TMP mode at creation: 0o664', 'config mode after os.replace, BEFORE chmod: 0o664', 'config mode after chmod: 0o600'. The chmod is wrapped in `except OSError: pass`, so on any filesystem without POSIX modes -- an exFAT stick or a network home, both plausible here -- the token stays world-readable and the caregiver is told 'Phone calls are on.' pytest exit 1, 2 failed."
+}

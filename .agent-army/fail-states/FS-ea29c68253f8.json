@@ -1,0 +1,43 @@
+{
+  "id": "FS-ea29c68253f8",
+  "class": "voice.incoherent-ordering",
+  "kind": "code",
+  "title": "Evening check-in asks 'anything you need before bed?' and then keeps talking",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/pulse/checkin_composer.py",
+    "symbol": "compose_evening"
+  },
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "severity": "medium",
+  "load_bearing": true,
+  "method": "composed a real evening check-in and read the message order",
+  "source_artifact": {
+    "path": "cura/pulse/checkin_composer.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "any evening check-in with at least one enrichment"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-ea29c68253f8.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "and then says"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "observed_at_discovery": "compose_evening uses generate_evening_summary() as the greeting, and that summary ends with the closing question. all_messages then appends everything else after it. Observed: \"Good evening, Robert. It's time for your Amlodipine. Is there anything you need before bed?\" followed by three further lines (hydration, dinner, a bathroom grab-bar question). A live 'cura rehearse' produced the same shape with four trailing lines including a scam warning. The change under review moved the evening medication line into that same blob, pushing the closer further from the end. pytest exit 1, 1 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

@@ -1,0 +1,41 @@
+{
+  "id": "FS-79faf3d90e63",
+  "class": "deps.incomplete-core",
+  "kind": "code",
+  "title": "REJECTED: requirements-core.txt is not too thin for setup and rehearsal",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "requirements-core.txt",
+    "symbol": "requirements-core"
+  },
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "severity": "info",
+  "load_bearing": false,
+  "method": "import-blocker: refused every top-level module outside stdlib + {twilio, apscheduler} and imported the rehearsal path",
+  "source_artifact": {
+    "path": "requirements-core.txt",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "import cura.setup.preview under a core-only import allowlist"
+  ],
+  "repro": {
+    "harness": "none",
+    "command": "",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": null,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "observed_at_discovery": "Not a defect. With a meta_path hook rejecting every non-stdlib module except twilio and apscheduler, 'from cura.setup.preview import preview_lines' imported cleanly, so the trimmed core requirements do cover install -> setup -> rehearse. Investigated because a too-thin core list would make install.sh succeed and 'cura rehearse' then crash.",
+  "status": "rejected",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": []
+}

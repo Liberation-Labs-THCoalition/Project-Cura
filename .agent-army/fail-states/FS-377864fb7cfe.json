@@ -1,0 +1,46 @@
+{
+  "id": "FS-377864fb7cfe",
+  "class": "path.memory-filename-traversal",
+  "kind": "code",
+  "title": "MemoryStore builds the filename from the elder's name and sanitises only spaces",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/memory/companion_memory.py",
+    "symbol": "MemoryStore.save"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "low",
+  "load_bearing": true,
+  "method": "input probe on elder_name with save/load round-trip",
+  "source_artifact": {
+    "path": "cura/memory/companion_memory.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "../ESCAPED",
+    "../../ESCAPED",
+    "Margaret Chen/Mom"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-377864fb7cfe.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      ", outside ",
+      "sanitises spaces and nothing else"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "safe_name = memory.elder_name.lower().replace(' ', '_'). With elder_name '../ESCAPED' and data_dir <tmp>/memory, save() wrote <tmp>/escaped.json -- one level above the store's own directory. The wizard sanitises its config filename correctly two files away (re.sub(r'[^a-z0-9]+', '-', ...)), and a previous audit checked that one and cleared it (FS-1e8f7a8ce112); the memory store never got the same treatment. Rated low because elder_name is caregiver-typed, not attacker-supplied. The realistic cost is a name with a slash in it splitting the memory to a path load() cannot find, so Cura meets her as a stranger every morning and nothing reports the loss. pytest exit 1, 2 failed of 6."
+}

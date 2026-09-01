@@ -1,0 +1,44 @@
+{
+  "id": "FS-7fde7ec0c4a4",
+  "class": "escalation.no-observation-recorded",
+  "kind": "code",
+  "title": "cura run records no check-in outcome, so nothing can ever be noticed to escalate",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/__main__.py",
+    "symbol": "_run_scheduled"
+  },
+  "found_by": "code-reviewer (review-of-reviews pass)",
+  "found_at": "2026-09-01T22:25:43Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "AST sweep for production call sites + read of _run_scheduled",
+  "triggers": [
+    "cura run --config ~/.cura/margaret.json"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-7fde7ec0c4a4.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "has no call site in cura/",
+      "imports CuraResponder and never constructs it"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:25:43Z"
+  },
+  "observed_at_discovery": "FS-15f837197b69 covers the output half (the responder promises help with no callback). This is the input half. record_checkin(), assess_crisis_level() and CaregiverSummaryBuilder have ZERO call sites anywhere in cura/ (AST sweep, 2026-09-01); CaregiverSummaryBuilder is reachable only from cura_mcp_server.py. So missed_checkins_this_week never leaves 0, medication_adherence_rate() is vacuous, and needs_elevated_monitoring() can never become true. _run_scheduled also imports CuraResponder (cura/__main__.py:222) and never constructs it. cura run is two cron jobs that dial and print; there is no observation, no state, and no caregiver-facing output of any kind. pytest exit 1, 3 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "source_artifact": {
+    "path": "cura/__main__.py",
+    "git_rev": "57cb15c"
+  }
+}

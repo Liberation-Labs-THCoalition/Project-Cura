@@ -1,0 +1,43 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-625a88c14716",
+  "class": "install.misdiagnosed-failure",
+  "title": "install.sh never cd's to its own directory and blames the internet for the result",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "install.sh",
+    "symbol": "main"
+  },
+  "severity": "high",
+  "method": "ran install.sh from a directory other than the repository root",
+  "source_artifact": {
+    "path": "install.sh",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "bash /path/to/Project-Cura/install.sh from any other directory"
+  ],
+  "repro": {
+    "harness": "shell",
+    "command": "bash .agent-army/fail-states/FS-625a88c14716.repro.sh",
+    "must_contain": [],
+    "must_not_contain": [
+      "FS-625a88c14716 FAIL"
+    ]
+  },
+  "observed_at_discovery": "Run from an empty temp directory, install.sh created a stray .venv there, then exited 1. pip's raw \"ERROR: Could not open requirements file: [Errno 2] No such file or directory: 'requirements-core.txt'\" printed to the screen -- the failing pip call has no 2>/dev/null, unlike the succeeding one -- followed by \"Couldn't download Cura's parts. This is almost always the internet connection rather than anything you did.\" Re-running from the same directory repeats it verbatim forever ('Cura's space already exists -- reusing it'), and nothing printed points at the real cause. README.md never states where to run it from."
+}

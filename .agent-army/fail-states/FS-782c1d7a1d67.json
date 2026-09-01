@@ -1,0 +1,44 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-782c1d7a1d67",
+  "class": "failure.swallowed",
+  "title": "Scheduled jobs discard the CallResult and log a failed call as sent",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/__main__.py",
+    "symbol": "_run_scheduled"
+  },
+  "severity": "high",
+  "method": "static-read + live CuraVoice call with unusable credentials",
+  "source_artifact": {
+    "path": "cura/__main__.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "a number Twilio rejects",
+    "expired or wrong Twilio credentials"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-782c1d7a1d67.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "discard the CallResult"
+    ]
+  },
+  "observed_at_discovery": "CuraVoice.call() catches every exception and returns CallResult(answered=False, error=...). Observed live: call(to_number='') with bad credentials returned answered=False, error='HTTP 401 error: Unable to create record: Authentication Error - invalid username', and raised nothing. do_morning (cura/__main__.py:275) and do_evening (:285) await that call as a bare statement and then print '[time] Morning check-in sent to <name>' unconditionally. pytest exit 1, 1 failed 1 passed."
+}

@@ -1,0 +1,41 @@
+{
+  "id": "FS-52806d97fbb8",
+  "class": "scheduling.ambiguous-hour-defaults-am",
+  "kind": "code",
+  "title": "A bare hour is read as AM, so the evening check-in is scheduled for 7am",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/wizard.py",
+    "symbol": "an_hour"
+  },
+  "found_by": "red-hat-tester",
+  "found_at": "2026-09-01T21:54:09Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "wizard drive answering the two hour questions '8' and '7'",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "evening answer: '7'"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-52806d97fbb8.repro.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:54:09Z"
+  },
+  "observed_at_discovery": "Config written with morning_time 8 and evening_time 7. Rehearsal printed 'In the evening, around 7:00'. an_hour() accepts a bare hour and to_hour24() maps it to AM, so both check-ins land in the morning: there is no evening call, and every evening medication prompt is lost. Nothing asks 'seven in the morning or the evening?' and nothing warns that the evening call now precedes the morning one.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

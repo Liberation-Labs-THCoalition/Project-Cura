@@ -1,0 +1,29 @@
+{
+  "id": "CANARY-err",
+  "expect": "ERROR",
+  "class": "harness-canary",
+  "kind": "code",
+  "title": "Canary: an absent source artifact must resolve to ERROR",
+  "locus": {"repo": "Project-Agent-Army", "path": ".agent-army/canaries/THIS-ARTIFACT-DOES-NOT-EXIST.py", "symbol": null},
+  "found_by": "test-engineer",
+  "found_at": "2026-08-31T00:00:00+00:00",
+  "severity": "harness-critical",
+  "load_bearing": true,
+  "method": "source_artifact deliberately points at a path that is not in the repo",
+  "source_artifact": {"path": ".agent-army/canaries/THIS-ARTIFACT-DOES-NOT-EXIST.py", "git_rev": "HEAD"},
+  "trigger_ref": "replay.py canary gate",
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider .agent-army/canaries/THIS-ARTIFACT-DOES-NOT-EXIST.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {"git_rev": "n/a", "exit_code": null, "at": "2026-08-31T00:00:00+00:00"},
+  "observed_at_discovery": "artifact absent; nothing to replay",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": []
+}

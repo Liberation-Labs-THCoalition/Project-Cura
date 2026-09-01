@@ -1,0 +1,44 @@
+{
+  "id": "FS-0ed017ad33c8",
+  "class": "privacy.world-readable-health-record",
+  "kind": "code",
+  "title": "The companion memory file -- mood history and health observations -- is written 0644",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/memory/companion_memory.py",
+    "symbol": "MemoryStore.save"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "direct call to MemoryStore.save() followed by stat(2)",
+  "source_artifact": {
+    "path": "cura/memory/companion_memory.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "MemoryStore(data_dir=...).save(CompanionMemory(elder_name='Margaret Chen'))"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-0ed017ad33c8.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "mood history and health",
+      "the memory directory is"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "MemoryStore.save() is a bare path.write_text() with no chmod, and mkdir() with no mode. Observed file mode 0664 (0644 under umask 022) and the directory at the umask default. The serialised record carries observations tagged 'health', mood_history, people and upcoming_events. The file's own docstring says 'Belongs to the family' and CLAUDE.md promises 'HIPAA-grade privacy'. It lands in ~/.cura/memory by default, inside the home directory every backup tool sweeps. pytest exit 1, 2 failed."
+}

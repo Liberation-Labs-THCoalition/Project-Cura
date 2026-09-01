@@ -1,0 +1,47 @@
+{
+  "id": "FS-fcea817cb681",
+  "class": "twiml.unescaped-markup",
+  "kind": "code",
+  "title": "webhook._say() interpolates the resident's name into TwiML without escaping it",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/webhook.py",
+    "symbol": "_say"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "medium",
+  "load_bearing": true,
+  "method": "input probe on _say/_gather with XML well-formedness checking",
+  "source_artifact": {
+    "path": "cura/comms/webhook.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "Tom & Barbara",
+    "Mom & Dad",
+    "Bea <the neighbour>",
+    "Peg \"Pegs\""
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-fcea817cb681.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "produced TwiML Twilio cannot parse",
+      "broke the inbound greeting TwiML"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "webhook._say('Tom & Barbara said <hello>') produced '<Say voice=\"Polly.Joanna\" rate=\"slow\">Tom & Barbara said <hello></Say>', which xml.etree.ElementTree rejects: 'not well-formed (invalid token): line 1, column 91'. The elder's name reaches _say via _elder_name -> build_inbound_greeting -> _gather, so an ampersand in a preferred name breaks the inbound greeting. Twilio hangs up on unparseable TwiML while the route still returns 200, so the inbound line dies silently and nothing reports it. Same class as the open FS-2b702d758df4 on voice.py::_build_twiml, at a second locus -- webhook.py builds its own TwiML, so fixing one does not fix the other. pytest exit 1, 6 failed of 8."
+}

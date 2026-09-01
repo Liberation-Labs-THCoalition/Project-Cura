@@ -42,7 +42,7 @@ if [ ! -d "$VENV" ]; then
     SAY ""
     SAY "Couldn't create Cura's private folder for its parts."
     SAY "On Debian or Ubuntu this usually means one package is missing:"
-    SAY "    sudo apt install python3-venv"
+    SAY "    sudo apt install python3-venv python3-tk"
     SAY ""
     SAY "Install that, then run this again."
     exit 1
@@ -66,6 +66,17 @@ if ! "$PIP" install --quiet -r requirements-core.txt; then
   exit 1
 fi
 SAY "All the pieces are in place."
+
+# ---- the setup window needs Tk (Debian/Ubuntu ship Python without it) ----
+if ! "$VENV/bin/python" -c 'import tkinter' 2>/dev/null \
+   && ! "$VENV/Scripts/python.exe" -c 'import tkinter' 2>/dev/null; then
+  SAY ""
+  SAY "One more piece: the part of Python that draws windows is missing,"
+  SAY "so Cura's setup window can't open yet. On Debian or Ubuntu:"
+  SAY "    sudo apt install python3-tk"
+  SAY ""
+  SAY "You can still finish setup right here in this window — carrying on."
+fi
 
 # ---- hand off to the wizard ---------------------------------------------
 PYBIN="$VENV/bin/python"

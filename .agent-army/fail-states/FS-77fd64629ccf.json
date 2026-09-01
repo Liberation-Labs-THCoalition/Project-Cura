@@ -1,0 +1,45 @@
+{
+  "id": "FS-77fd64629ccf",
+  "class": "authn.twilio-webhook-unsigned",
+  "kind": "code",
+  "title": "The webhook validates no Twilio signature, so anyone can mark the morning dose as taken",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/webhook.py",
+    "symbol": "create_app"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "static read + live forged POSTs through the Flask test client",
+  "source_artifact": {
+    "path": "cura/comms/webhook.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "POST /voice/checkin-response Digits=1 (no signature)",
+    "POST /voice/checkin-response Digits=2 (no signature)",
+    "X-Twilio-Signature: totally-invalid=="
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-77fd64629ccf.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "contains no Twilio signature validation"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "Built the app with a CuraResponder wired to recording callbacks and posted with no X-Twilio-Signature header. POST /voice/checkin-response with Digits=1 returned HTTP 200 and fired on_medication_confirmed. Repeating it with a garbage signature header also returned 200 -- the header is never read. POST /voice/inbound with an arbitrary From returned the full greeting. grep for RequestValidator / X-Twilio-Signature over cura/comms/webhook.py: no matches. pytest exit 1: 1 failed of 3 without Flask (static half), 3 failed of 3 with Flask installed."
+}

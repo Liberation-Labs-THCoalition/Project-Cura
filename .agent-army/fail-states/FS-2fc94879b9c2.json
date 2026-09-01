@@ -1,0 +1,39 @@
+{
+  "id": "FS-2fc94879b9c2",
+  "class": "config.gui-edits-not-persisted",
+  "kind": "code",
+  "title": "Edits made in the reopened setup window never reach the config Cura dials from",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/gui.py",
+    "symbol": "finish"
+  },
+  "found_by": "red-hat-tester",
+  "found_at": "2026-09-01T21:54:09Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "static-read only: tkinter is not installed and there is no display, so gui.run() could not be driven",
+  "source_artifact": null,
+  "triggers": [
+    "reopen `cura setup --window`, change the phone number, close the window"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-2fc94879b9c2.repro.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": null,
+    "at": null
+  },
+  "observed_at_discovery": "NOT OBSERVED. Read from source: OUT_DIR -- the elder's config -- is referenced only inside finish(), which runs only from the last question's Finish button; go_next() and on_close() write ~/.cura/setup-progress.json alone, and a completed setup reopens at question 1 as a review. A caregiver correcting the phone number and closing the window would see the new number stored and redisplayed while Cura kept dialling the old one. The companion fixture asserts the source shape, not the behaviour; it goes red, but that is not a behavioural observation, so this record stays unverified.",
+  "status": "unverified",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": [],
+  "note": "Needs a run on a machine with tkinter and a display before this can be called observed."
+}

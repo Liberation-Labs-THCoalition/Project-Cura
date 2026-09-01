@@ -1,0 +1,50 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-ffc5f205d165",
+  "class": "escalation.silent-omission",
+  "title": "unknown_timing_medications() has no call site, so skipped medications are never reported",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/pulse/eldercare_pulse.py",
+    "symbol": "unknown_timing_medications"
+  },
+  "severity": "critical",
+  "method": "call-site sweep of cura/ + end-to-end 'cura rehearse'",
+  "source_artifact": {
+    "path": "cura/pulse/eldercare_pulse.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "with lunch",
+    "as needed",
+    "PRN",
+    "noon",
+    "after meals",
+    "midday",
+    "afternoon",
+    ""
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-ffc5f205d165.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "has no call site in cura/"
+    ]
+  },
+  "observed_at_discovery": "A sweep of cura/ (excluding the definition and its own docstring) returns zero call sites; no test references it either. Confirmed end to end: a config with Warfarin recorded 'with lunch' produced a 'cura rehearse' transcript naming Warfarin in neither the morning nor the evening script, and no warning anywhere. pytest exit 1, 1 failed 1 passed."
+}

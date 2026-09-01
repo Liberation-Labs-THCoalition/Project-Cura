@@ -1,0 +1,44 @@
+{
+  "id": "FS-dd8f2f62722b",
+  "class": "coverage.untested-module",
+  "kind": "code",
+  "title": "The webhook that receives the elder's answer is untested; the help-request route has never been executed by a test",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/webhook.py",
+    "symbol": "create_app"
+  },
+  "found_by": "test-engineer",
+  "found_at": "2026-09-01T23:40:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "grep of tests/ for webhook + whole-module sabotage replayed against the full suite in a hermetic copy",
+  "source_artifact": {
+    "path": "cura/comms/webhook.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "cura/comms/webhook.py"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-dd8f2f62722b.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "passes with cura/comms/webhook.py replaced",
+      "no file in tests/ references cura.comms.webhook"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T23:40:00Z"
+  },
+  "observed_at_discovery": "No file under tests/ mentions webhook. cura/comms/webhook.py (191 lines) replaced by `raise RuntimeError(...)` at import: the full suite reported '157 passed'. This module holds /voice/checkin-response (the keypad answer during a check-in), /voice/inbound (the elder calling Cura), and /voice/status (Twilio's call outcome, which is log-only). The path 'he pressed 2 and asked for help' has never run in a test. Repro exit 1, 2 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

@@ -1,0 +1,44 @@
+{
+  "id": "FS-2523bb0a6b27",
+  "class": "secrets.world-readable-credential-file",
+  "kind": "code",
+  "title": "The Twilio auth token, her address and her medication list sit in a world-readable file",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/wizard.py",
+    "symbol": "save"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "end-to-end run of `cura setup` then `cura add-phone` against a throwaway HOME, then stat(2) on everything written",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "cura setup; cura add-phone; stat ~/.cura/setup-progress.json"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-2523bb0a6b27.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "readable by other accounts and by every",
+      "it should be 0700. Every other account"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "Ran the real wizard.run() and add_phone.run() with a scripted HOME. Afterwards: ~/.cura is 0775, ~/.cura/setup-progress.json is 0664, ~/.cura/margaret.json is 0600. setup-progress.json contains \"twilio_sid\", \"twilio_token\" (the full 32-hex Auth Token), \"twilio_number\", the resident's phone, the caregiver's phone, \"meds\": \"Lisinopril, Metformin\" and \"address\": \"412 County Road 14, Buffalo, Wyoming\". add_phone.py chmods only the derived config, with the comment '# the auth token lives here now'; the token lives in two files and only one is locked. Under a normal umask of 022 the modes are 0755/0644 rather than 0775/0664 -- still world-readable either way. pytest exit 1, 2 failed."
+}

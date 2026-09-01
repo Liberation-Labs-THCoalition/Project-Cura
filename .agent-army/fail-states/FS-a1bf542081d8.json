@@ -1,0 +1,48 @@
+{
+  "id": "FS-a1bf542081d8",
+  "class": "dosing.unprompted-keypad-contract",
+  "kind": "code",
+  "title": "The check-in never says which key to press, and the same key means opposite things morning and evening",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/responder.py",
+    "symbol": "handle_dtmf"
+  },
+  "found_by": "test-engineer",
+  "found_at": "2026-09-01T23:40:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "end-to-end render of the composer check-ins `cura run` speaks, cross-read against CuraResponder.handle_dtmf and CuraVoice._build_twiml",
+  "source_artifact": {
+    "path": "cura/comms/responder.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "press 1 in the morning after 'Have you had breakfast?'",
+    "press 2 in the evening after 'Do you have grab bars in your bathroom?'",
+    "press 2 in the morning",
+    "press 1 in the evening"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-a1bf542081d8.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "never says what to press",
+      "opposite things at different times of day",
+      "no action attribute"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T23:40:00Z"
+  },
+  "observed_at_discovery": "cura/__main__.py _run_scheduled speaks CheckinComposer output and places the call with gather_response=True, so a digit is collected. Rendered for a two-medication profile, neither the morning nor the evening check-in contains the word 'press' anywhere -- the morning ends 'Have you had breakfast? Even something small gives you energy for the day.' and the evening ends on a home-safety question. CuraResponder.handle_dtmf then reads digit 1 as medication_confirmed in 'checkin' context and as help_requested in 'evening' context, and digit 2 as help_requested in 'checkin' and all_good in 'evening'. So a yes to 'have you had breakfast' is filed as a medication confirmation (and reaches the caregiver as 'Meds: all confirmed'), and a no at night is filed as all_good. Separately, the Gather built by CuraVoice._build_twiml carries no action attribute, so the digit is not posted to /voice/checkin-response at all -- status_callback is a call-lifecycle URL, not the Gather action. Repro exit 1, 3 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

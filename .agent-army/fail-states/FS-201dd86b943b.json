@@ -1,0 +1,44 @@
+{
+  "id": "FS-201dd86b943b",
+  "class": "rehearsal.evening-silently-omitted",
+  "kind": "code",
+  "title": "The rehearsal swallows an evening-composition failure and still says 'you're ready'",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/__main__.py",
+    "symbol": "_preview"
+  },
+  "found_by": "code-reviewer (review-of-reviews pass)",
+  "found_at": "2026-09-01T22:25:43Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "read of both renderers + injected raise through the real _preview",
+  "triggers": [
+    "cura rehearse"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-201dd86b943b.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "still said",
+      "separate copies"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:25:43Z"
+  },
+  "observed_at_discovery": "cura/__main__.py:170-179 and cura/setup/preview.py:32-39 both wrap compose_evening in a bare `except Exception: evening = []` and omit the evening section; _preview then prints \"If that sounds right, you're ready.\" regardless. Observed: with compose_evening raising, _preview emitted a morning-only script and the ready line, and preview_lines returned only the morning heading. The rehearsal is the caregiver's ONLY evidence the product works, and a morning-only script is indistinguishable from a household with no evening medications. Also observed: _preview does not call preview_lines at all, so the terminal and the window render from two separate copies \u2014 the exact drift preview.py's own docstring says it exists to prevent. I did not find a natural config that makes compose_evening raise; the swallow is observed, its natural trigger is not. pytest exit 1, 2 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "source_artifact": {
+    "path": "cura/__main__.py",
+    "git_rev": "57cb15c"
+  }
+}

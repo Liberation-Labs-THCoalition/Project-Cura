@@ -1,0 +1,29 @@
+{
+  "id": "CANARY-empty",
+  "expect": "ERROR",
+  "class": "harness-canary",
+  "kind": "code",
+  "title": "Canary: pytest exit 5 (no tests collected) must be ERROR, not FAIL",
+  "locus": {"repo": "Project-Agent-Army", "path": ".agent-army/canaries/canary_empty.py", "symbol": null},
+  "found_by": "test-engineer",
+  "found_at": "2026-08-31T00:00:00+00:00",
+  "severity": "harness-critical",
+  "load_bearing": true,
+  "method": "pytest file containing zero test functions",
+  "source_artifact": null,
+  "trigger_ref": "replay.py canary gate",
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider .agent-army/canaries/canary_empty.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {"git_rev": "n/a", "exit_code": 5, "at": "2026-08-31T00:00:00+00:00"},
+  "observed_at_discovery": "pytest exit 5, no tests ran",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": []
+}

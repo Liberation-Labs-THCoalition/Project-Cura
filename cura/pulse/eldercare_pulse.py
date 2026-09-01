@@ -16,12 +16,87 @@ The pulse self-modifies based on the elder's patterns:
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
 
+
+# Which check-in a medication belongs to. Cura only has two delivery slots,
+# the morning check-in and the evening one, so every recorded "time" has to
+# resolve to one or both of them. Getting this wrong is a dosing error, not a
+# wording error: someone with dementia who is told at 6pm that it is time for a
+# drug they already took at 9am may well take it a second time.
+_MORNING_WORDS = r"\b(?:morning|breakfast|wake|waking|sunrise)\b"
+_EVENING_WORDS = r"\b(?:evening|night|bedtime|bed|dinner|supper|sunset)\b"
+_BOTH_WORDS = r"\b(?:both|twice|two times|2x|bid)\b"
+_CLOCK = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b")
+
+
+def medication_slots(med: dict[str, Any]) -> set[str]:
+    """Return the check-ins a medication should be named in.
+
+    Reads the medication's recorded ``time`` and resolves it to some subset of
+    ``{"morning", "evening"}``. Understands words ("morning", "at night",
+    "twice daily") and clock times ("8am", "19:30").
+
+    A time that is missing or unreadable resolves to NO check-in, and the
+    medication is not named aloud at all.
+
+    An earlier version defaulted the unknown case to the morning check-in,
+    reasoning that a missed reminder beats a doubled one. That is right as far
+    as it goes and it misses a case: a drug that is actually taken at night,
+    recorded with no time, would then be announced at 9am. That is not a missed
+    reminder, it is a prompt at the wrong time, and it carries exactly the
+    double-dose risk the default was meant to avoid.
+
+    So: unknown timing produces silence, and `unknown_timing_medications` on the
+    profile lists what was skipped so a human can be asked. Silence is
+    recoverable — the caregiver still gives the medication, as they did before
+    Cura existed. A confidently wrong prompt to someone who cannot remember
+    whether they already took it is not.
+
+    This is the same rule the fail-state ledger uses for red_proof: no
+    observation, no claim.
+    """
+    raw = str(med.get("time", "") or "").strip().lower()
+    if not raw:
+        return set()
+
+    slots: set[str] = set()
+    if re.search(_BOTH_WORDS, raw):
+        return {"morning", "evening"}
+    if re.search(_MORNING_WORDS, raw):
+        slots.add("morning")
+    if re.search(_EVENING_WORDS, raw):
+        slots.add("evening")
+    if slots:
+        return slots
+
+    m = _CLOCK.search(raw)
+    if m:
+        hour, meridiem = int(m.group(1)), m.group(3)
+        if meridiem == "pm" and hour != 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+        return {"morning" if hour < 12 else "evening"}
+
+    return set()
+
+
+
+def unknown_timing_medications(medications) -> list[str]:
+    """Medications Cura will NOT mention, because it does not know when they are taken.
+
+    A caregiver must be told this list. Silent omission is safe for dosing and
+    unsafe for trust: he has to know Cura is not reminding her about these, or he
+    will assume it is.
+    """
+    return [str(m.get("name", "?")) for m in (medications or [])
+            if not medication_slots(m)]
 
 @dataclass
 class ElderProfile:
@@ -137,15 +212,31 @@ class EldercarePulseConfig:
         day_idx = datetime.now().timetuple().tm_yday % len(greetings)
         return greetings[day_idx]
 
-    def generate_medication_reminder(self) -> str:
-        name = self.profile.display_name
-        meds = self.profile.medications
+    def medications_for(self, when: str) -> list[dict[str, Any]]:
+        """The medications due at the ``when`` check-in ("morning"/"evening")."""
+        return [
+            m for m in self.profile.medications
+            if when in medication_slots(m)
+        ]
+
+    def generate_medication_reminder(self, when: str = "morning") -> str:
+        """Name the medications due at this check-in, or "" if none are.
+
+        Says no name. Every caller delivers this straight after a greeting
+        that has already said it, and hearing "Bob. Bob," back to back is
+        what makes a companion stop sounding like a person.
+
+        Names every medication due in the slot. A silently truncated list
+        reads as a complete one, and the dose left off the end is the dose
+        that gets missed.
+        """
+        meds = self.medications_for(when)
         if not meds:
             return ""
-        med_names = [m.get("name", "medication") for m in meds[:3]]
+        med_names = [m.get("name", "medication") for m in meds]
         if len(med_names) == 1:
-            return f"{name}, it's time for your {med_names[0]}."
-        return f"{name}, it's time for your {', '.join(med_names[:-1])} and {med_names[-1]}."
+            return f"It's time for your {med_names[0]}."
+        return f"It's time for your {', '.join(med_names[:-1])} and {med_names[-1]}."
 
     def generate_evening_summary(self) -> str:
         name = self.profile.display_name
@@ -157,8 +248,9 @@ class EldercarePulseConfig:
         if today_checkins:
             meds_taken = sum(1 for c in today_checkins if c.medication_confirmed)
             parts.append(f"You confirmed {meds_taken} medication check{'s' if meds_taken != 1 else ''} today.")
-        if self.profile.medications:
-            parts.append(self.generate_medication_reminder())
+        evening_meds = self.generate_medication_reminder("evening")
+        if evening_meds:
+            parts.append(evening_meds)
         parts.append("Is there anything you need before bed?")
         return " ".join(parts)
 

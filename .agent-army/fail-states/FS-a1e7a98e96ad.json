@@ -1,0 +1,45 @@
+{
+  "id": "FS-a1e7a98e96ad",
+  "class": "privacy.shared-tmp-audio-dir",
+  "kind": "code",
+  "title": "Synthesised check-in audio, which names her medications, defaults to /tmp/cura_audio",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/integrations/tts.py",
+    "symbol": "LocalTTS.__init__"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "low",
+  "load_bearing": true,
+  "method": "static read + instantiation, plus replay of synthesize()'s mkdir",
+  "source_artifact": {
+    "path": "cura/integrations/tts.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "LocalTTS() default output_dir",
+    "/tmp/cura_audio pre-created by another account"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-a1e7a98e96ad.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "under the shared temp directory",
+      "the audio directory is created"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "LocalTTS defaults output_dir='/tmp/cura_audio' and synthesize() does mkdir(parents=True, exist_ok=True) with no mode, then writes a fixed filename ('checkin.wav'). Observed default output_dir: /tmp/cura_audio; mkdir mode 0775 (0755 under umask 022). The audio is the check-in script read aloud, which names her medications. The path is fixed and guessable, so another account can pre-create or symlink it and exist_ok=True will write through. Rated low because piper-tts is optional and appears in neither requirements file, so this path does not execute on the first household. pytest exit 1, 2 failed."
+}

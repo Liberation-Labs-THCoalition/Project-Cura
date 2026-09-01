@@ -48,6 +48,39 @@ class CuraResponder:
         self._on_speech = on_speech
         self._response_log: list[dict[str, Any]] = []
 
+
+    def _promise_help(self, context: str, when_reachable: str) -> str:
+        """Return what Cura may truthfully say about getting help.
+
+        Cura previously said "I'm alerting your family right now. Help is on the
+        way." whenever help was requested -- including when `on_help_requested`
+        was None, which is how it is constructed at __main__.py:106 and
+        webhook.py:189. Nobody was alerted. A woman with dementia who has fallen
+        was told help was coming, and then nothing happened.
+
+        That is the most dangerous thing this system can do. It is worse than
+        silence, because silence leaves her calling out; a false assurance stops
+        her calling out.
+
+        So the promise is conditional on there being someone to call. Each caller
+        passes its own warm wording for the reachable case -- these differ by
+        situation and are worth keeping; an earlier version of this guard
+        flattened them into one line and lost "You're not alone", which is the
+        warmest thing Cura says to a frightened person.
+        """
+        if self._on_help:
+            self._on_help(context)
+            return when_reachable
+
+        logger.error(
+            "ESCALATION REQUESTED WITH NO CALLBACK WIRED (%s). Nobody was "
+            "contacted. Cura must not be placing live calls in this state.",
+            context,
+        )
+        return ("I can't reach anyone for you myself right now. "
+                "If you need help, please hang up and dial nine one one. "
+                "I'm going to stay on the line with you.")
+
     def handle_dtmf(self, digit: str, call_context: str = "checkin") -> dict[str, str]:
         """Handle a keypad press during a call.
 
@@ -68,13 +101,13 @@ class CuraResponder:
                            "Have a wonderful day.",
                 }
             elif digit == "2":
-                if self._on_help:
-                    self._on_help("Elder pressed 2 — needs help")
                 return {
                     "action": "help_requested",
-                    "say": "I'm letting your family know right now. "
-                           "Stay where you are and someone will check on you soon. "
-                           "You're not alone.",
+                    "say": self._promise_help(
+                        "Elder pressed 2 — needs help",
+                        "I'm letting your family know right now. "
+                        "Stay where you are and someone will check on you soon. "
+                        "You're not alone."),
                 }
             elif digit == "9":
                 return {
@@ -84,8 +117,8 @@ class CuraResponder:
 
         if call_context == "evening":
             if digit == "1":
-                if self._on_help:
-                    self._on_help("Elder needs something before bed")
+                self._promise_help("Elder needs something before bed",
+                                   "I'll let your family know.")
                 return {
                     "action": "help_requested",
                     "say": "I'll let your family know. Is there anything else?",
@@ -120,12 +153,12 @@ class CuraResponder:
         lower = transcript.lower()
 
         if any(w in lower for w in ["help", "emergency", "fall", "fell", "hurt", "pain"]):
-            if self._on_help:
-                self._on_help(f"Elder said: {transcript[:200]}")
             return {
                 "action": "help_requested",
-                "say": "I'm alerting your family right now. Stay calm, stay safe. "
-                       "Help is on the way.",
+                "say": self._promise_help(
+                    f"Elder said: {transcript[:200]}",
+                    "I'm alerting your family right now. Stay calm, stay safe. "
+                    "Help is on the way."),
             }
 
         if any(w in lower for w in [

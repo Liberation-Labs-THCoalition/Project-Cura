@@ -1,0 +1,41 @@
+{
+  "id": "FS-05a6bd6524af",
+  "class": "packaging.missing-flask-dependency",
+  "kind": "code",
+  "title": "Flask is in no requirements file, so `cura webhook` cannot start",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "requirements-core.txt",
+    "symbol": "requirements"
+  },
+  "found_by": "red-hat-tester",
+  "found_at": "2026-09-01T21:54:09Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "read both requirements files and probed the installed venv",
+  "source_artifact": {
+    "path": "requirements-core.txt",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "cura webhook --port 5000"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-05a6bd6524af.repro.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:54:09Z"
+  },
+  "observed_at_discovery": "'flask' appears in neither requirements-core.txt (twilio, APScheduler) nor requirements.txt, and `.venv/bin/python -c 'import flask'` fails after install.sh. create_app raises ImportError without it. The webhook is the only code path that receives 'press 2 if you need help' and the speech transcript, so after a by-the-book install the listening half of Cura cannot be run at all.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

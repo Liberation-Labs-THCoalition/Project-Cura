@@ -1,0 +1,47 @@
+{
+  "id": "FS-fbefe09ff9e9",
+  "class": "coverage.untested-module",
+  "kind": "code",
+  "title": "The setup package -- the newest code and the only code a caregiver operates -- has no tests at all",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/wizard.py",
+    "symbol": "run"
+  },
+  "found_by": "test-engineer",
+  "found_at": "2026-09-01T23:40:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "grep of tests/ for cura.setup + whole-module sabotage replayed against the full suite in a hermetic copy",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "cura/setup/wizard.py",
+    "cura/setup/gui.py",
+    "cura/setup/preview.py",
+    "cura/setup/add_phone.py"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-fbefe09ff9e9.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "stays green with these files replaced",
+      "no file in tests/ references cura.setup"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T23:40:00Z"
+  },
+  "observed_at_discovery": "No file under tests/ mentions cura.setup or cura/setup. Each of the four setup modules (976 lines total) was replaced by `raise RuntimeError(...)` at import; the full suite reported '157 passed' every time. Everything the household depends on -- the medication list, the two check-in hours, the caregiver's number, the Twilio credentials -- is written by this untested code, and the 157-test suite is green whether it works or does not exist. Repro exit 1, 2 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

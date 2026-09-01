@@ -1,0 +1,47 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-ac721ea8069b",
+  "class": "config.unusable-written",
+  "title": "an_hour()'s range guard is unreachable; setup writes an hour APScheduler refuses",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/wizard.py",
+    "symbol": "an_hour"
+  },
+  "severity": "critical",
+  "method": "input probe + end-to-end wizard run followed by 'cura run'",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "13pm",
+    "15pm",
+    "19pm",
+    "23pm"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-ac721ea8069b.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "the wizard accepted",
+      "guard is unreachable"
+    ]
+  },
+  "observed_at_discovery": "'if not 1 <= h <= 12 and not 0 <= h <= 23' is false for every h the regex can produce, so nothing is rejected. Answering '13pm' to the evening question completed setup with 'All set. Cura is ready.' and wrote \"evening_time\": 25. 'python -m cura run --config ~/.cura/robert.json --dry-run' then exited 1 with an unhandled ValueError from apscheduler/triggers/cron/fields.py: \"Error validating expression '25': the last value (25) is higher than the maximum value (23)\" -- neither check-in is ever scheduled. pytest exit 1, 5 failed."
+}

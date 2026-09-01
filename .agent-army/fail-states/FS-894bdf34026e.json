@@ -1,0 +1,41 @@
+{
+  "id": "FS-894bdf34026e",
+  "class": "input.empty-hour-bricks-setup",
+  "kind": "code",
+  "title": "An empty hour answer bricks setup permanently, with a stack trace",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/wizard.py",
+    "symbol": "to_hour24"
+  },
+  "found_by": "red-hat-tester",
+  "found_at": "2026-09-01T21:54:09Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "seeded the shared progress file with the value the window wizard stores, then ran setup",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "morning=\"\" in ~/.cura/setup-progress.json (cleared hour box in the window wizard)"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-894bdf34026e.repro.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:54:09Z"
+  },
+  "observed_at_discovery": "`cura setup` died with AttributeError: 'NoneType' object has no attribute 'group' at wizard.py:144 in to_hour24. No config was written and 'completed' was never set, so `cura rehearse` and `cura add-phone` both refuse. Every subsequent run fails identically -- `ask` returns the stored empty string without re-asking -- so the only escape is deleting a file he has never been told about. gui.go_next stores \"\" for morning/evening because neither is `required` and the check only runs on non-empty values; both wizards share the file.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

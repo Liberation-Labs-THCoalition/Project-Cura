@@ -1,0 +1,30 @@
+{
+  "id": "FS-a01dad3bb030",
+  "class": "secrets.credential-in-traceback",
+  "kind": "code",
+  "title": "REJECTED: the Twilio auth token does not reach exception text, tracebacks or the error log",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/voice.py",
+    "symbol": "call"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "none",
+  "load_bearing": false,
+  "method": "live twilio client instantiation, forced 401, plus review of the setup-error.txt path",
+  "source_artifact": {
+    "path": "cura/comms/voice.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [],
+  "status": "rejected",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": [],
+  "repro": null,
+  "red_proof": null,
+  "observed_at_discovery": "Checked the three paths a credential could reach a file or a screen and none of them carry it. (1) CuraVoice.call() stores str(e) in CallResult.error. Instantiated a real twilio.rest.Client with a known token and forced a 401: repr(client) is '<Twilio AC1111...>', str(e) is 'HTTP 401 error: Unable to create record: Authenticate', and the token appears in neither str(e) nor traceback.format_exc(). (2) packaging/cura_setup_app.py writes traceback.format_exc() to ~/.cura/setup-error.txt and tells the caregiver to email that file onward; format_exception emits source lines, not local values, so the token cannot appear there. (3) No logging.basicConfig or FileHandler exists anywhere in the package, so nothing is written to a log file at all. git grep for AC[0-9a-f]{32} and hardcoded tokens over the tree: no matches; ~/.cura is outside the repo and cannot be committed. Rejected so the next audit does not re-run this. The real credential exposure is the file permissions -- see FS-2523bb0a6b27 and FS-41eb5e1d0c36."
+}

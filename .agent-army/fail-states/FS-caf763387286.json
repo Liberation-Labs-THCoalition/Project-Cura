@@ -1,0 +1,47 @@
+{
+  "id": "FS-caf763387286",
+  "class": "observability.queued-reported-as-answered",
+  "kind": "code",
+  "title": "A Twilio call that failed to connect is recorded as answered, and no test ever runs the real call branch",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/voice.py",
+    "symbol": "call"
+  },
+  "found_by": "test-engineer",
+  "found_at": "2026-09-01T23:40:00Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "fake Twilio client injected into CuraVoice._client + mutation of the real branch replayed against the full suite",
+  "source_artifact": {
+    "path": "cura/comms/voice.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "Twilio call status 'failed'",
+    "status 'no-answer'",
+    "status 'busy'",
+    "client.calls.create replaced by None"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-caf763387286.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "recorded answered=True",
+      "CallResult.error is empty"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T23:40:00Z"
+  },
+  "observed_at_discovery": "CuraVoice.call()'s non-dry-run branch sets answered=True as soon as client.calls.create() returns -- which is when Twilio has QUEUED the call, before the phone rings. Observed with an injected fake client whose calls.create() returns an object with status='failed', error_code=13224: CallResult(answered=True, call_sid='CA_fake', error=''). No test exercises this branch at all: replacing `client.calls.create(` with `None and client.calls.create(` leaves 157 passed. For a rural line that fails to connect, a call he never received is indistinguishable in Cura's own records from one he answered. Repro exit 1, 2 failed.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": []
+}

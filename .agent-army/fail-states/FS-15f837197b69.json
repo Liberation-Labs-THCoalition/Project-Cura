@@ -1,0 +1,44 @@
+{
+  "id": "FS-15f837197b69",
+  "class": "escalation.help-request-never-delivered",
+  "kind": "code",
+  "title": "Cura promises to alert the family and alerts nobody",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/__main__.py",
+    "symbol": "main"
+  },
+  "found_by": "red-hat-tester",
+  "found_at": "2026-09-01T21:54:09Z",
+  "severity": "critical",
+  "load_bearing": true,
+  "method": "constructed the responder exactly as the two production call sites do, then pressed 2 and reported a fall",
+  "source_artifact": {
+    "path": "cura/__main__.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "DTMF 2 during a check-in",
+    "speech: 'I fell in the pantry and I can't get up'",
+    "Gather without action + inline twiml (no callback URL exists)"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-15f837197b69.repro.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:54:09Z"
+  },
+  "observed_at_discovery": "CuraResponder() with no callbacks (cura/__main__.py:106 and cura/comms/webhook.py:189 both build it bare) answered DTMF 2 with \"I'm letting your family know right now. Stay where you are and someone will check on you soon.\" and the reported fall with \"I'm alerting your family right now. Help is on the way.\" _on_help was None in both. CuraVoice.alert_caregiver and CuraVoice.crisis_alert are defined and called from nowhere outside tests. The request leaves no record anywhere.",
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "note": "Two further reasons the same request cannot arrive, found by reading and NOT separately verified (both need live Twilio credentials to observe): (1) CuraVoice._build_twiml emits <Gather> with no action attribute, and the call is created with inline twiml= rather than a URL, so there is no document URL for the keypad press to post back to; (2) _run_scheduled passes status_callback=\"/voice/checkin-response\", a relative path where Twilio requires an absolute URL. Filed here rather than separately because the class and locus are the same: a help request the elder was told had been delivered."
+}

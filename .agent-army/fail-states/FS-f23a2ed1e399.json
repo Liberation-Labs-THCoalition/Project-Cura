@@ -1,0 +1,44 @@
+{
+  "id": "FS-f23a2ed1e399",
+  "class": "debug.werkzeug-console-exposed",
+  "kind": "code",
+  "title": "The webhook's own entry point starts the Werkzeug debugger on 0.0.0.0",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/webhook.py",
+    "symbol": "__main__"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "AST read + live launch of the module entry point and an HTTP probe",
+  "source_artifact": {
+    "path": "cura/comms/webhook.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "python -m cura.comms.webhook --port 5599"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-f23a2ed1e399.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "call app.run(debug=True)",
+      "publishes the debugger"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "Ran `python -m cura.comms.webhook --port 5599 --elder-name Margaret`. stderr: ' * Running on all addresses (0.0.0.0)' / ' * Debugger is active!' / ' * Debugger PIN: 113-347-580'. ss showed LISTEN 0.0.0.0:5599. GET '/?__debugger__=yes&cmd=resource&f=debugger.js' returned the interactive-console javascript, confirming the debugger endpoint is live. The module docstring tells the operator to run exactly this command and then 'put this behind ngrok ... so Twilio can reach it'. The process holding the console also holds the Twilio auth token and the resident's address. cura/__main__.py's `cura webhook` gets this right and omits debug. pytest exit 1, 2 failed."
+}

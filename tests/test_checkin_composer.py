@@ -86,3 +86,69 @@ class TestCheckinComposer:
         msgs = checkin.all_messages
         assert isinstance(msgs, list)
         assert len(msgs) >= 2
+
+
+def _bob_config() -> EldercarePulseConfig:
+    """The shape a real setup writes: one morning-only medication."""
+    return EldercarePulseConfig(ElderProfile(
+        name="Robert Edrington",
+        preferred_name="Bob",
+        phone="+15552223333",
+        medications=[{"name": "Donepezil", "time": "morning"}],
+        morning_time=9,
+        evening_time=18,
+    ))
+
+
+class TestSpokenCheckinQuality:
+    """These assert on what the elder actually hears — the full line sequence
+    the rehearsal prints — rather than on any one fragment."""
+
+    def _opens_with(self, line: str, name: str) -> bool:
+        return line.startswith(name + ",") or line.startswith(name + ".")
+
+    def test_only_the_greeting_opens_with_the_name(self):
+        """The greeting has already said it. Anything after that opening with
+        the name again is the "Bob. Bob," stutter."""
+        composer = CheckinComposer()
+        config = _bob_config()
+        for messages in (composer.compose_morning(config).all_messages,
+                         composer.compose_evening(config).all_messages):
+            for line in messages[1:]:
+                assert not self._opens_with(line, "Bob"), (messages[0], line)
+
+    def test_no_single_line_says_the_name_twice(self):
+        composer = CheckinComposer()
+        config = _bob_config()
+        for messages in (composer.compose_morning(config).all_messages,
+                         composer.compose_evening(config).all_messages):
+            for line in messages:
+                assert line.count("Bob") <= 1, line
+
+    def test_memory_touch_does_not_repeat_the_greeting_name(self):
+        from cura.memory.companion_memory import CompanionMemory
+        memory = CompanionMemory(elder_name="Bob")
+        memory.add_event("Sarah's birthday", "2026-09-05", people=["Sarah"])
+        composer = CheckinComposer(memory=memory)
+        touches = composer.compose_morning(_bob_config()).memory_touches
+        assert touches, "expected the seeded event to produce a touch"
+        assert not touches[0].startswith("Bob")
+
+    def test_morning_medication_is_not_repeated_in_the_evening(self):
+        composer = CheckinComposer()
+        config = _bob_config()
+        evening = " ".join(composer.compose_evening(config).all_messages)
+        assert "Donepezil" not in evening, evening
+        morning = " ".join(composer.compose_morning(config).all_messages)
+        assert "Donepezil" in morning
+
+    def test_evening_medication_is_still_delivered(self):
+        composer = CheckinComposer()
+        config = EldercarePulseConfig(ElderProfile(
+            name="Robert Edrington", preferred_name="Bob",
+            medications=[{"name": "Amlodipine", "time": "evening"}],
+        ))
+        evening = " ".join(composer.compose_evening(config).all_messages)
+        assert "Amlodipine" in evening
+        morning = " ".join(composer.compose_morning(config).all_messages)
+        assert "Amlodipine" not in morning

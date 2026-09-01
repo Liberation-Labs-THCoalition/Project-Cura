@@ -1,0 +1,41 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-c1532c191753",
+  "class": "escalation.no-contact",
+  "title": "Setup window finishes with no caregiver, leaving every escalation with nowhere to go",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/gui.py",
+    "symbol": "run.finish"
+  },
+  "severity": "critical",
+  "method": "drove gui.run() through a recording stub for the widget layer only; all validation, state and config logic executed is gui.py's own",
+  "source_artifact": null,
+  "triggers": [
+    "leave both caregiver questions blank and press Next"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-c1532c191753.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "no emergency contact",
+      "dials the empty string"
+    ]
+  },
+  "observed_at_discovery": "questions() marks only name and phone required; caregiver_name and caregiver_phone carry no required flag, while wizard.py asks both with optional=False. Driving gui.run() with those two blank wrote ~/.cura/robert.json containing \"emergency_contacts\": [] and \"primary_caregiver\": {} while the closing screen reads \"Cura is ready.\" Feeding that config to CuraVoice: alert_caregiver() dialled to_number='' and returned answered=False with the error swallowed; crisis_alert() returned []. pytest exit 1, 1 failed. NOTE: cura/setup/gui.py is untracked at 57cb15c, so this repro cannot run until it is committed."
+}

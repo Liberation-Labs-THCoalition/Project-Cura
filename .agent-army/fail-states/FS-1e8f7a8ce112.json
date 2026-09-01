@@ -1,0 +1,42 @@
+{
+  "id": "FS-1e8f7a8ce112",
+  "class": "path.config-filename-traversal",
+  "kind": "code",
+  "title": "Not a defect: the config filename cannot escape ~/.cura",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/wizard.py",
+    "symbol": "run_outpath"
+  },
+  "found_by": "red-hat-tester",
+  "found_at": "2026-09-01T21:54:09Z",
+  "severity": "none",
+  "load_bearing": false,
+  "method": "static-read + probe",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "preferred name '../../../etc/passwd'",
+    "preferred name '/'"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-1e8f7a8ce112.repro.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": null,
+    "at": null
+  },
+  "observed_at_discovery": "Ran setup with preferred name '../../../etc/passwd'; the config landed at ~/.cura/etc-passwd.json. The name is flattened by re.sub(r'[^a-z0-9]+','-',...) before it reaches the path, so dots and slashes cannot survive. No defect.",
+  "status": "rejected",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": []
+}

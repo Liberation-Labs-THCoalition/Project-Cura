@@ -1,0 +1,44 @@
+{
+  "id": "FS-1b5035a84c0e",
+  "class": "authn.inbound-caller-unverified",
+  "kind": "code",
+  "title": "Any caller reaching Cura's number is greeted by the resident's first name",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/comms/webhook.py",
+    "symbol": "inbound_call"
+  },
+  "found_by": "security-auditor",
+  "found_at": "2026-09-01T22:12:00Z",
+  "severity": "high",
+  "load_bearing": true,
+  "method": "static read + live POST with an arbitrary From through the Flask test client",
+  "source_artifact": {
+    "path": "cura/comms/webhook.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "POST /voice/inbound From=+15550009999",
+    "POST /voice/inbound-response From=+15550009999 Digits=4"
+  ],
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-1b5035a84c0e.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "never reads the From field"
+    ]
+  },
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T22:12:00Z"
+  },
+  "observed_at_discovery": "POST /voice/inbound with From=+15550009999 returned: <Say ...>Hello, Margaret. It's Cura. I'm glad you called. ... Press 3 if you want to report something suspicious. Press 4 if you need help.</Say>. The route body never references request.form['From'] or Caller. Cura's own scam_shield treats 'a stranger who already knows her name' as the opening move of an elder-fraud call, and this endpoint hands that out to anyone who dials. Press 4 from the same unknown number fires on_help_requested and pages the caregiver. pytest exit 1: 1 failed of 2 without Flask, 2 failed of 2 with Flask."
+}

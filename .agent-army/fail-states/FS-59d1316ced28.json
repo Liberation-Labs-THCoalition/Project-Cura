@@ -1,0 +1,49 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-59d1316ced28",
+  "class": "dosing.mistimed-prompt",
+  "title": "Medication time parser reads the dose quantity as the clock time",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/pulse/eldercare_pulse.py",
+    "symbol": "medication_slots"
+  },
+  "severity": "critical",
+  "method": "static-read + input probe + end-to-end 'cura rehearse'",
+  "source_artifact": {
+    "path": "cura/pulse/eldercare_pulse.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "1 tab at 7pm",
+    "2 pills, 9pm",
+    "take 2 tablets at 8pm",
+    "0.5 tablet at 9pm",
+    "every 12 hours",
+    "3 times a day"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-59d1316ced28.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "put Donepezil in the morning check-in",
+      "resolved to"
+    ]
+  },
+  "observed_at_discovery": "_CLOCK is applied with .search(), so it matches the first 1-2 digit number anywhere in the field. medication_slots({'time':'1 tab at 7pm'}) -> {'morning'}. Confirmed end to end: a config with Donepezil recorded '1 tab at 7pm' made 'cura rehearse' print \"It's time for your Donepezil.\" in the 8:00 morning script and name it nowhere in the 19:00 evening script. 'every 12 hours' -> {'evening'} only; '3 times a day' -> {'morning'} only. pytest exit 1, 6 failed."
+}

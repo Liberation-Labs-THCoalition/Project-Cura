@@ -1,0 +1,35 @@
+{
+  "id": "FS-89c40fe057db",
+  "class": "test.tautological-assertion",
+  "kind": "code",
+  "title": "REJECTED: test_demo_runs_without_error's 'medications confirmed' assertion is weak but the test is not empty",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "tests/test_console.py",
+    "symbol": "test_demo_runs_without_error"
+  },
+  "found_by": "test-engineer",
+  "found_at": "2026-09-01T23:40:00Z",
+  "severity": "low",
+  "load_bearing": false,
+  "method": "read + mutation of cura/console.py run_demo",
+  "source_artifact": {
+    "path": "tests/test_console.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q tests/test_console.py",
+    "must_contain": [],
+    "must_not_contain": []
+  },
+  "red_proof": null,
+  "observed_at_discovery": "assert 'medications confirmed' in output.lower() is satisfied by the hardcoded print at cura/console.py:60 and carries no signal about any logic. Rejected as a finding because the same test also asserts 'Margaret' and 'Lisinopril' appear, which do depend on the composer and the medication reminder, so the test as a whole is killed by real mutants. Worth tightening, not worth a regression case. (tests/test_console.py also imports StringIO and unittest.mock.patch and uses neither.)",
+  "status": "rejected",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 0,
+  "error_count": 0,
+  "log": []
+}

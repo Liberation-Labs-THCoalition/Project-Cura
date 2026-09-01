@@ -1,0 +1,46 @@
+{
+  "kind": "code",
+  "found_by": "code-reviewer",
+  "found_at": "2026-09-01T21:52:31Z",
+  "load_bearing": true,
+  "status": "open",
+  "last_replayed": null,
+  "replay_count": 0,
+  "fail_count": 1,
+  "error_count": 0,
+  "log": [],
+  "red_proof": {
+    "git_rev": "57cb15c",
+    "exit_code": 1,
+    "at": "2026-09-01T21:52:31Z"
+  },
+  "id": "FS-284276c9342c",
+  "class": "validator.divergent-duplicate",
+  "title": "Window's phone validator diverges from the wizard's and writes an impossible number",
+  "locus": {
+    "repo": "Project-Cura",
+    "path": "cura/setup/gui.py",
+    "symbol": "_phone_ok"
+  },
+  "severity": "high",
+  "method": "ran both validators on the same inputs, then drove gui.run() through a widget-layer stub",
+  "source_artifact": {
+    "path": "cura/setup/wizard.py",
+    "git_rev": "57cb15c"
+  },
+  "triggers": [
+    "0307-555-0142",
+    "555-123-45677",
+    "3075550142 7"
+  ],
+  "repro": {
+    "harness": "pytest",
+    "command": "python3 -m pytest -q -p no:cacheprovider --import-mode=importlib .agent-army/fail-states/FS-284276c9342c.repro.py",
+    "must_contain": [],
+    "must_not_contain": [
+      "terminal wizard",
+      "not a number any carrier will dial"
+    ]
+  },
+  "observed_at_discovery": "gui._phone_ok accepts any 10 or 11 digits; wizard.a_phone accepts 11 only when the first digit is 1. For '0307-555-0142' the terminal wizard returns \"That doesn't look like a 10-digit phone number...\" while the window accepts it and writes \"phone\": \"+03075550142\" -- no country code begins with 0. Same class as the already-fixed FS-1 hour-parser duplication; the hour validator was fixed by importing, the phone pair was left copied. pytest exit 1, 4 failed 6 passed."
+}

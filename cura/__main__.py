@@ -53,7 +53,10 @@ def main() -> None:
     # Setup, rehearsal, and phone-service commands. These exist because the
     # wizard's closing screen names them; a setup flow that ends by telling
     # someone to run a command that does not exist is worse than no wizard.
-    subparsers.add_parser("setup", help="Set up Cura by answering a few questions")
+    setup_parser = subparsers.add_parser(
+        "setup", help="Set up Cura by answering a few questions")
+    setup_parser.add_argument("--window", action="store_true",
+                              help="Open a window instead of using the terminal")
 
     rehearse_parser = subparsers.add_parser(
         "rehearse", help="Hear what a check-in will sound like. Nothing is dialled.")
@@ -66,6 +69,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "setup":
+        if getattr(args, "window", False):
+            from cura.setup.gui import run as gui_run
+            sys.exit(gui_run())
         from cura.setup.wizard import run as setup_run
         sys.exit(setup_run())
 
