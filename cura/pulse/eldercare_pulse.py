@@ -60,43 +60,40 @@ def medication_slots(med: dict[str, Any]) -> set[str]:
 
     This is the same rule the fail-state ledger uses for red_proof: no
     observation, no claim.
+
+    Now delegates to cura.pulse.medication, which also understands weekly and
+    as-needed. Two consequences worth stating: a weekly drug is named only on
+    its own day, and an as-needed drug is NEVER named here at all -- there is
+    no time for a PRN medication, and announcing one manufactures a dose nobody
+    asked for. Ask `prn_status` instead, which answers "may I take another?"
     """
-    raw = str(med.get("time", "") or "").strip().lower()
-    if not raw:
-        return set()
-
-    slots: set[str] = set()
-    if re.search(_BOTH_WORDS, raw):
-        return {"morning", "evening"}
-    if re.search(_MORNING_WORDS, raw):
-        slots.add("morning")
-    if re.search(_EVENING_WORDS, raw):
-        slots.add("evening")
-    if slots:
-        return slots
-
-    m = _CLOCK.search(raw)
-    if m:
-        hour, meridiem = int(m.group(1)), m.group(3)
-        if meridiem == "pm" and hour != 12:
-            hour += 12
-        elif meridiem == "am" and hour == 12:
-            hour = 0
-        return {"morning" if hour < 12 else "evening"}
-
-    return set()
-
+    from cura.pulse.medication import parse_medication, slots_for
+    from datetime import datetime as _dt
+    return slots_for(parse_medication(med), _dt.now())
 
 
 def unknown_timing_medications(medications) -> list[str]:
-    """Medications Cura will NOT mention, because it does not know when they are taken.
+    """Medications Cura will NOT mention, because it does not know when.
 
     A caregiver must be told this list. Silent omission is safe for dosing and
-    unsafe for trust: he has to know Cura is not reminding her about these, or he
-    will assume it is.
+    unsafe for trust: he has to know Cura is not reminding her about these, or
+    he will assume it is.
+
+    Asks the SCHEDULE, not today's slots. An earlier version asked whether the
+    medication had a slot today, which reported a weekly drug as unknown-timing
+    on the six days it is not due, and an as-needed drug as unhandled when it
+    is in fact being guarded by prn_status. Both are false alarms, and a list
+    that cries wolf six days a week is one a caregiver stops reading.
     """
-    return [str(m.get("name", "?")) for m in (medications or [])
-            if not medication_slots(m)]
+    from cura.pulse.medication import parse_medication, Schedule
+    out = []
+    for m in (medications or []):
+        parsed = parse_medication(m)
+        if parsed.schedule is Schedule.UNKNOWN or (
+                parsed.schedule is Schedule.WEEKLY and not parsed.slots):
+            out.append(str(m.get("name", "?")))
+    return out
+
 
 @dataclass
 class ElderProfile:
@@ -212,11 +209,19 @@ class EldercarePulseConfig:
         day_idx = datetime.now().timetuple().tm_yday % len(greetings)
         return greetings[day_idx]
 
-    def medications_for(self, when: str) -> list[dict[str, Any]]:
-        """The medications due at the ``when`` check-in ("morning"/"evening")."""
+    def medications_for(self, when: str,
+                        today: datetime | None = None) -> list[dict[str, Any]]:
+        """The medications due at the ``when`` check-in ("morning"/"evening").
+
+        Day-aware: a weekly medication appears only on its own day, and an
+        as-needed medication never appears, because there is no time at which
+        it is due.
+        """
+        from cura.pulse.medication import parse_medication, slots_for
+        day = today or datetime.now()
         return [
             m for m in self.profile.medications
-            if when in medication_slots(m)
+            if when in slots_for(parse_medication(m), day)
         ]
 
     def generate_medication_reminder(self, when: str = "morning") -> str:
