@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,19 @@ logger = logging.getLogger(__name__)
 
 class EscalationUnavailable(Exception):
     """Raised when Cura is asked to serve without a way to summon help."""
+
+
+
+def _dialable(value) -> bool:
+    """Whether this is a number a call can actually be placed to.
+
+    Emptiness was the only test, so the bare string "+" passed — and "+" is
+    exactly what norm_phone("") used to return, so a skipped question became an
+    emergency contact Cura believed it could reach. A guard that accepts an
+    undialable number is indistinguishable from a guard that passed.
+    """
+    digits = re.sub(r"\D", "", str(value or ""))
+    return len(digits) >= 10 and not digits.lstrip("1").startswith(("0", "1"))
 
 
 def escalation_readiness(profile) -> list[str]:
@@ -41,13 +55,13 @@ def escalation_readiness(profile) -> list[str]:
     """
     problems: list[str] = []
     contacts = [c for c in (getattr(profile, "emergency_contacts", None) or [])
-                if str(c.get("phone", "")).strip()]
+                if _dialable(c.get("phone", ""))]
     caregiver = getattr(profile, "primary_caregiver", None) or {}
-    if not contacts and not str(caregiver.get("phone", "")).strip():
+    if not contacts and not _dialable(caregiver.get("phone", "")):
         problems.append(
             "no emergency contact has a phone number — nobody can be reached")
-    if not str(getattr(profile, "phone", "") or "").strip():
-        problems.append("the person Cura calls has no phone number")
+    if not _dialable(getattr(profile, "phone", "")):
+        problems.append("the person Cura calls has no phone number Cura can dial")
     return problems
 
 

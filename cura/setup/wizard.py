@@ -143,30 +143,112 @@ def a_phone(v: str) -> str | None:
 
 
 def norm_phone(v: str) -> str:
-    d = re.sub(r"\D", "", v)
+    """Normalise to E.164, or return "" when there is no number here.
+
+    Returned "+" for empty input — a string that is truthy, non-empty after
+    strip, and therefore passed escalation_readiness's "has a phone number"
+    test while being unable to receive a call. A blank answer became an
+    emergency contact Cura believed it could reach.
+    """
+    d = re.sub(r"\D", "", v or "")
     if len(d) == 10:
         d = "1" + d
+    if len(d) != 11 or not d.startswith("1") or d[1] in "01":
+        # A country code cannot begin with 0, and a NANP area code cannot begin
+        # with 0 or 1. Twilio rejects these outright, so accepting them here
+        # only moves the failure to the moment help is needed.
+        return ""
     return "+" + d
 
 
 def an_hour(v: str) -> str | None:
-    m = re.match(r"^(\d{1,2})\s*(am|pm)?$", v.strip(), re.I)
+    """Validate a check-in hour.
+
+    The old test was `not 1 <= h <= 12 and not 0 <= h <= 23`, which reduces to
+    `not 0 <= h <= 23` — so 13 through 23 passed a check whose message says
+    "between 1 and 12". "13pm" then became hour 25, and `cura run` died with an
+    unhandled ValueError when it tried to schedule it. The phone never rang,
+    and setup had said "All set."
+    """
+    m = re.match(r"^(\d{1,2})\s*(am|pm)?$", (v or "").strip(), re.I)
     if not m:
         return "Please give a time like 8am or 7pm."
-    h = int(m.group(1))
-    if not 1 <= h <= 12 and not 0 <= h <= 23:
-        return "Please give an hour between 1 and 12, like 8am."
+    h, mer = int(m.group(1)), (m.group(2) or "").lower()
+    if mer and not 1 <= h <= 12:
+        return f"There's no such time as {h}{mer}. Please give an hour like 8am or 7pm."
+    if not mer and not 0 <= h <= 23:
+        return "Please give an hour between 0 and 23, or a time like 8am."
     return None
 
 
-def to_hour24(v: str) -> int:
-    m = re.match(r"^(\d{1,2})\s*(am|pm)?$", v.strip(), re.I)
-    h, mer = int(m.group(1)), (m.group(2) or "").lower()
-    if mer == "pm" and h != 12:
-        h += 12
-    if mer == "am" and h == 12:
-        h = 0
-    return h
+def to_hour24(v: str, default: int | None = None) -> int:
+    """Parse to a 24-hour hour, never returning one that cannot exist.
+
+    Previously `m.group(1)` on a failed match raised AttributeError inside
+    finish(), so clearing a pre-filled time field in the setup window bricked
+    setup permanently with a stack trace. And "13pm" produced 25, which no
+    scheduler accepts.
+    """
+    m = re.match(r"^(\d{1,2})\s*(am|pm)?$", (v or "").strip(), re.I)
+    if m:
+        h, mer = int(m.group(1)), (m.group(2) or "").lower()
+        if mer == "pm" and h != 12:
+            h += 12
+        if mer == "am" and h == 12:
+            h = 0
+        if 0 <= h <= 23:
+            return h
+    if default is not None:
+        return default
+    raise ValueError(f"{v!r} is not a time of day Cura can use")
+
+
+
+
+def write_config(out: Path, cfg: dict) -> None:
+    """Write the config WITHOUT destroying what setup did not author.
+
+    `add_phone` writes the Twilio block into this same file. Both wizards
+    rebuilt cfg from scratch and wrote over the top of it, so re-running setup
+    silently deleted the credentials — and nothing noticed: state["phone_enabled"]
+    stayed True and the closing screen still said "All set. Cura is ready."
+    install.sh re-runs setup, so this was reachable by following our own
+    instructions.
+    """
+    existing = {}
+    if out.exists():
+        try:
+            existing = json.loads(out.read_text())
+        except (OSError, ValueError):
+            existing = {}
+    merged = {**existing, **cfg}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".tmp")
+    tmp.write_text(json.dumps(merged, indent=2))
+    try:
+        tmp.chmod(0o600)      # before the rename: no window at the final path
+    except OSError:
+        pass
+    os.replace(tmp, out)
+
+
+def readiness_problems(cfg: dict) -> list[str]:
+    """What still stops Cura summoning help, in plain words.
+
+    Both wizards printed "Cura is ready" as an unconditional string. It is a
+    claim about the config, so it has to be checked against the config —
+    otherwise it is a check that cannot fail.
+    """
+    from cura.pulse.eldercare_pulse import ElderProfile
+    from cura.comms.escalation import escalation_readiness
+    return escalation_readiness(ElderProfile(
+        name=cfg.get("name", ""),
+        preferred_name=cfg.get("preferred_name", ""),
+        phone=cfg.get("phone", ""),
+        medications=cfg.get("medications", []),
+        emergency_contacts=cfg.get("emergency_contacts", []),
+        primary_caregiver=cfg.get("primary_caregiver", {}),
+    ))
 
 
 # ---------------------------------------------------------------- the wizard
@@ -294,8 +376,8 @@ def run() -> int:
             "name": state["caregiver_name"],
             "phone": norm_phone(state["caregiver_phone"]),
         },
-        "morning_time": to_hour24(state["morning"]),
-        "evening_time": to_hour24(state["evening"]),
+        "morning_time": to_hour24(state.get("morning", ""), default=8),
+        "evening_time": to_hour24(state.get("evening", ""), default=20),
     }
     if state.get("address"):
         cfg["address"] = state["address"]
@@ -303,13 +385,27 @@ def run() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^a-z0-9]+", "-", state["preferred_name"].lower()).strip("-") or "person"
     out = OUT_DIR / f"{safe}.json"
-    out.write_text(json.dumps(cfg, indent=2))
-    try:
-        out.chmod(0o600)  # address, numbers, medication list
-    except OSError:
-        pass
+    write_config(out, cfg)
 
     rule()
+    problems = readiness_problems(cfg)
+    if problems:
+        # "Cura is ready" is a claim about the config, so it gets checked
+        # against the config. Saying it unconditionally is a check that cannot
+        # fail, and the thing it would have failed on is whether anyone can be
+        # reached when she needs help.
+        say("Almost there — but not ready yet.", blank_after=1)
+        say(f"Everything is saved for {state['preferred_name']}, and Cura will")
+        say("not start until this is sorted:")
+        say("")
+        for prob in problems:
+            say(f"  - {prob}")
+        say("")
+        say("Run this again to fix it:")
+        say("")
+        say("      cura setup --again")
+        say("")
+        return
     say("All set. Cura is ready.", blank_after=1)
     say(f"Everything is saved for {state['preferred_name']}.")
     say("")

@@ -106,9 +106,20 @@ def _save(state: dict) -> None:
 
 
 def _phone_ok(v):
-    d = re.sub(r"\D", "", v)
-    return None if len(d) in (10, 11) else \
-        "That doesn't look like a full phone number. Any format is fine — 555-123-4567 works."
+    """One phone rule, shared with the terminal wizard.
+
+    The window accepted any 10 or 11 digits; the terminal wizard required an
+    11-digit number to start with 1. They write to the same state file and
+    wizard.ask() returns a stored answer WITHOUT re-validating, so a number the
+    window accepted was normalised by the terminal's rules and could reach the
+    config malformed. Divergent validators on one shared file is the same
+    two-halves defect in a different costume.
+    """
+    from cura.setup.wizard import norm_phone
+    if norm_phone(v):
+        return None          # None means OK here; a message means rejected
+    return ("That doesn't look like a number Cura can dial. "
+            "Any format is fine — 555-123-4567 works.")
 
 
 def _norm_phone(v):
@@ -140,7 +151,9 @@ def questions(state):
         dict(key="caregiver_name", q="And what is your name?",
              help="If Cura is ever worried, this is who it tells."),
         dict(key="caregiver_phone", q="The best number to reach you?",
-             help="Cura will contact you if something seems wrong.", check=_phone_ok),
+             help="Cura will contact you if something seems wrong. "
+                  "Without it there is nobody for Cura to call.",
+             required=True, check=_phone_ok),
         dict(key="meds", q=f"Does {first} take any regular medications?",
              help="Separate them with commas, like: Lisinopril, Metformin. "
                   "Don't worry about doses. You can leave this empty."),
@@ -390,11 +403,8 @@ def run() -> int:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         safe = re.sub(r"[^a-z0-9]+", "-", cfg["preferred_name"].lower()).strip("-") or "person"
         out = OUT_DIR / f"{safe}.json"
-        out.write_text(json.dumps(cfg, indent=2))
-        try:
-            out.chmod(0o600)  # address, numbers, medication list
-        except OSError:
-            pass
+        from cura.setup.wizard import write_config
+        write_config(out, cfg)   # merge: never delete the Twilio block
         state["completed"] = True
         state["config_path"] = str(out)
         _save(state)
