@@ -26,7 +26,10 @@ One file, human-readable, belongs to the family.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import unicodedata
 import logging
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -236,6 +239,50 @@ class CompanionMemory:
             ))
 
 
+
+def _safe_stem(elder_name: str) -> str:
+    """Turn a person's name into a filename that cannot leave the store.
+
+    The old version was `name.lower().replace(" ", "_")`, which is not a
+    sanitiser -- it only handled spaces. An elder_name of "../../escaped" wrote
+    to /tmp/escaped.json, outside the store entirely, and elder_name is not
+    always ours: it comes from setup, and in the facility case it would come
+    from whoever enters the resident list.
+
+    Kept deliberately narrow: lowercase letters, digits, underscore, hyphen.
+    Everything else becomes an underscore, so separators and dots cannot
+    survive to be interpreted as a path.
+
+    Accents are folded rather than destroyed, so "José García" becomes
+    jose_garcia and not jos__garc_a. Cura ships in Spanish; a household should
+    not find their own name mangled in their own filesystem.
+
+    NOTE: distinct names can still collide ("José García" and "Jose Garcia"
+    both fold to jose_garcia), which would silently merge two people's
+    memories. Harmless in a single-elder household, NOT harmless in the
+    facility case. Fixing it properly needs a stable resident id rather than a
+    name, which is a data-model decision -- tracked with the PRN work.
+    """
+    if not elder_name or not elder_name.strip():
+        raise ValueError("elder_name is empty; there is nobody to store")
+    folded = unicodedata.normalize("NFKD", elder_name.strip().lower())
+    stem = "".join(
+        ch if (ch.isalnum() and ch.isascii()) or ch in "_-" else "_"
+        for ch in folded
+        if not unicodedata.combining(ch)
+    ).strip("_")
+    if not stem:
+        # A name in a non-Latin script folds to nothing. Refusing here would
+        # mean Cura cannot remember anyone named in Chinese, Arabic, Hebrew,
+        # Greek or Cyrillic -- a hard failure for a whole class of households,
+        # in a product whose entire job is remembering. Fall back to a stable
+        # digest of the name instead: unreadable on disk, but deterministic,
+        # contained, and the person's real name is preserved inside the file.
+        digest = hashlib.sha256(elder_name.strip().encode("utf-8")).hexdigest()
+        return f"elder_{digest[:16]}"
+    return stem
+
+
 class MemoryStore:
     """Persist companion memory to disk.
 
@@ -246,19 +293,40 @@ class MemoryStore:
     def __init__(self, data_dir: str = "") -> None:
         self._dir = Path(data_dir) if data_dir else Path.home() / ".cura" / "memory"
 
+    def _path_for(self, elder_name: str) -> Path:
+        """Resolve one elder's file, and verify it lands inside the store.
+
+        The sanitiser above should make this impossible to violate; the check
+        stays anyway, because a containment rule enforced in one place is
+        cheaper to trust than one argued from the sanitiser's correctness.
+        """
+        path = self._dir / f"{_safe_stem(elder_name)}.json"
+        root = self._dir.resolve()
+        if not str(path.resolve()).startswith(str(root) + os.sep):
+            raise ValueError(
+                f"refusing to write {elder_name!r} outside the memory store")
+        return path
+
+    def _harden(self, path: Path) -> None:
+        """Memory holds what she said, who visited, and how she seemed."""
+        try:
+            os.chmod(self._dir, 0o700)
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+
     def save(self, memory: CompanionMemory) -> Path:
         self._dir.mkdir(parents=True, exist_ok=True)
-        safe_name = memory.elder_name.lower().replace(" ", "_")
-        path = self._dir / f"{safe_name}.json"
+        path = self._path_for(memory.elder_name)
 
         data = asdict(memory)
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        self._harden(path)
         logger.info("Memory saved: %s (%d observations)", path, len(memory.observations))
         return path
 
     def load(self, elder_name: str) -> CompanionMemory:
-        safe_name = elder_name.lower().replace(" ", "_")
-        path = self._dir / f"{safe_name}.json"
+        path = self._path_for(elder_name)
 
         if not path.exists():
             return CompanionMemory(
@@ -287,5 +355,7 @@ class MemoryStore:
         return memory
 
     def exists(self, elder_name: str) -> bool:
-        safe_name = elder_name.lower().replace(" ", "_")
-        return (self._dir / f"{safe_name}.json").exists()
+        try:
+            return self._path_for(elder_name).exists()
+        except ValueError:
+            return False

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import pytest
 import tempfile
 from pathlib import Path
 
@@ -145,3 +147,72 @@ class TestMemoryStore:
             data = json.loads(raw)
             assert data["elder_name"] == "Margaret"
             assert "roses" in raw
+
+
+class TestMemoryStoreContainment:
+    """elder_name reaches the filesystem, and it is not always ours.
+
+    It comes from setup, and in the facility case from whoever enters the
+    resident list. Before this, `name.lower().replace(" ", "_")` was the only
+    sanitising, so "../../escaped" wrote to /tmp/escaped.json.
+    """
+
+    def _store(self, tmp_path):
+        from cura.memory.companion_memory import MemoryStore
+        return MemoryStore(data_dir=str(tmp_path / "store")), tmp_path / "store"
+
+    @pytest.mark.parametrize("name", [
+        "../../escaped", "../sibling", "a/b/nested", "....//....//x",
+        "/etc/passwd", "margaret\x00.json", "..", ".",
+    ])
+    def test_no_name_escapes_the_store(self, tmp_path, name):
+        from cura.memory.companion_memory import CompanionMemory
+        store, root = self._store(tmp_path)
+        path = store.save(CompanionMemory(elder_name=name))
+        assert str(path.resolve()).startswith(str(root.resolve()) + os.sep)
+
+    def test_nothing_is_written_outside_the_store(self, tmp_path):
+        from cura.memory.companion_memory import CompanionMemory
+        store, root = self._store(tmp_path)
+        for name in ["../../escaped", "../sibling", "/etc/passwd"]:
+            store.save(CompanionMemory(elder_name=name))
+        stray = [p for p in tmp_path.rglob("*.json")
+                 if not str(p).startswith(str(root))]
+        assert stray == [], f"wrote outside the store: {stray}"
+
+    @pytest.mark.parametrize("name", [
+        "Margaret Chen", "José García", "李伟", "Bjørn", "مريم", "Ελένη",
+        "Зоя", "O'Brien", "Mary-Anne",
+    ])
+    def test_every_name_is_storable_and_round_trips(self, tmp_path, name):
+        """Refusing a non-Latin name would mean Cura cannot remember a whole
+        class of households, in a product whose job is remembering."""
+        from cura.memory.companion_memory import CompanionMemory
+        store, _ = self._store(tmp_path)
+        store.save(CompanionMemory(elder_name=name))
+        assert store.exists(name)
+        assert store.load(name).elder_name == name, "real name must survive"
+
+    def test_accents_fold_rather_than_shred(self):
+        from cura.memory.companion_memory import _safe_stem
+        assert _safe_stem("José García") == "jose_garcia"
+        assert _safe_stem("Zoë") == "zoe"
+
+    def test_digest_fallback_is_deterministic_and_distinct(self):
+        from cura.memory.companion_memory import _safe_stem
+        assert _safe_stem("李伟") == _safe_stem("李伟")
+        assert _safe_stem("李伟") != _safe_stem("Зоя")
+
+    def test_empty_name_is_refused(self):
+        from cura.memory.companion_memory import _safe_stem
+        for empty in ["", "   ", "\t"]:
+            with pytest.raises(ValueError):
+                _safe_stem(empty)
+
+    def test_memory_files_are_private(self, tmp_path):
+        """Memory holds what she said, who visited, and how she seemed."""
+        from cura.memory.companion_memory import CompanionMemory
+        store, root = self._store(tmp_path)
+        path = store.save(CompanionMemory(elder_name="Margaret Chen"))
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
+        assert oct(root.stat().st_mode & 0o777) == "0o700"
