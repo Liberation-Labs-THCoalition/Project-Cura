@@ -64,6 +64,8 @@ def main() -> None:
         "setup", help="Set up Cura by answering a few questions")
     setup_parser.add_argument("--window", action="store_true",
                               help="Open a window instead of using the terminal")
+    setup_parser.add_argument("--again", action="store_true",
+                              help="Start the questions over, to change an answer")
 
     rehearse_parser = subparsers.add_parser(
         "rehearse", help="Hear what a check-in will sound like. Nothing is dialled.")
@@ -76,11 +78,12 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "setup":
+        again = getattr(args, "again", False)
         if getattr(args, "window", False):
             from cura.setup.gui import run as gui_run
-            sys.exit(gui_run())
+            sys.exit(gui_run(again=again))
         from cura.setup.wizard import run as setup_run
-        sys.exit(setup_run())
+        sys.exit(setup_run(again=again))
 
     if args.command == "rehearse":
         cfg = args.config or _default_config_path()

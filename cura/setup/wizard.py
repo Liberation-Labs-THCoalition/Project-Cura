@@ -287,7 +287,24 @@ def _meds_with_timings(state: dict, first: str, ask) -> list[dict]:
     return meds
 
 
-def run() -> int:
+def clear_answers() -> None:
+    """Forget the saved answers so the questions can be asked again.
+
+    ask() returns early for any key already in state, so once setup completed
+    it asked NOTHING on every later run: a wrong phone number could not be
+    corrected, and there was no way to set Cura up for a different person. The
+    config file itself is left alone, so the Twilio block and anything else
+    setup did not author survive.
+    """
+    try:
+        STATE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def run(again: bool = False) -> int:
+    if again:
+        clear_answers()
     state = load()
     resuming = bool(state)
 

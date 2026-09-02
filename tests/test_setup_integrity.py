@@ -159,6 +159,32 @@ class TestEveryCommandWePrintIsReal:
         assert "cura" in scripts, "no `cura` console script declared"
         assert scripts["cura"].startswith("cura.__main__:")
 
+    def test_every_flag_named_in_our_own_messages_is_a_real_flag(self):
+        """The first version of this test checked subcommand names only, so it
+        passed while a message told the household to run `cura setup --again`,
+        a flag that did not exist. I introduced that string in the commit
+        immediately after fixing this exact class of defect, and the test I had
+        just written did not catch it."""
+        import argparse
+        import re
+        from pathlib import Path
+        from cura.__main__ import main  # noqa: F401
+
+        repo = Path(__file__).resolve().parent.parent
+        promised = set()
+        for py in list((repo / "cura").rglob("*.py")) + [repo / "install.sh"]:
+            if not py.exists():
+                continue
+            for m in re.finditer(r"cura ([a-z-]+)((?:\s+--[a-z-]+)+)", py.read_text()):
+                for flag in re.findall(r"--[a-z-]+", m.group(2)):
+                    promised.add((m.group(1), flag))
+        src = (repo / "cura/__main__.py").read_text()
+        for cmd, flag in sorted(promised):
+            block = src.split(f'add_parser(\n        "{cmd}"')[-1] \
+                if f'"{cmd}"' in src else src
+            assert flag in src, \
+                f"we tell people to run `cura {cmd} {flag}` and {flag} does not exist"
+
     def test_every_command_named_in_our_own_messages_is_a_real_subcommand(self):
         import argparse
         import re

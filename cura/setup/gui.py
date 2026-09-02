@@ -201,7 +201,10 @@ def _button(tk, parent, text, command, font, primary=False):
                      activeforeground="white", **opts)
 
 
-def run() -> int:
+def run(again: bool = False) -> int:
+    if again:
+        from cura.setup.wizard import clear_answers
+        clear_answers()
     try:
         import tkinter as tk
         from tkinter import font as tkfont
