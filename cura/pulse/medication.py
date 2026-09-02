@@ -82,8 +82,10 @@ _DAYS = {
 _DAY_RE = re.compile(r"\b(" + "|".join(sorted(_DAYS, key=len, reverse=True)) + r")s?\b", re.I)
 _WEEKLY_WORDS = re.compile(r"\b(?:weekly|once a week|every week|each week)\b", re.I)
 
-_MORNING_WORDS = re.compile(r"\b(?:morning|breakfast|wake|waking|sunrise|am)\b", re.I)
-_EVENING_WORDS = re.compile(r"\b(?:evening|night|bedtime|bed|dinner|supper|sunset|pm)\b", re.I)
+_MORNING_WORDS = re.compile(
+    r"\b(?:mornings?|breakfasts?|wake|waking|sunrise|am)\b", re.I)
+_EVENING_WORDS = re.compile(
+    r"\b(?:evenings?|nights?|bedtimes?|bed|dinners?|suppers?|sunset|pm)\b", re.I)
 _BOTH_WORDS = re.compile(r"\b(?:both|twice|two times|2x|bid)\b", re.I)
 
 # "every 4 hours", "q4h", "every 4-6 hours", "every 6 hrs"
@@ -173,8 +175,12 @@ def _slots_from_words(text: str) -> set[str]:
     return slots
 
 
-def _hour_from_clock(text: str) -> int | None:
-    """Resolve an hour, or None when the text is ambiguous.
+def _hours_from_clock(text: str) -> list[int]:
+    """Resolve EVERY hour stated, or [] when the text is ambiguous.
+
+    Returning only the first silently dropped the second dose of a two-dose
+    instruction: "2 tabs at 8am and 1 tab at 8pm" kept the morning and lost the
+    evening entirely.
 
     Candidates carrying a meridiem or a colon win outright. A bare number is
     accepted only when it is the sole candidate -- otherwise the string is
@@ -194,9 +200,9 @@ def _hour_from_clock(text: str) -> int | None:
 
     explicit = [h for e, h in cands if e]
     if explicit:
-        return explicit[0]
+        return explicit
     bare = [h for e, h in cands if not e]
-    return bare[0] if len(bare) == 1 else None
+    return bare if len(bare) == 1 else []
 
 
 def parse_medication(med: dict[str, Any]) -> Medication:
@@ -235,9 +241,10 @@ def parse_medication(med: dict[str, Any]) -> Medication:
         out.schedule = Schedule.WEEKLY
         out.days = days
         out.slots = _slots_from_words(text)
-        out.hour = _hour_from_clock(text)
-        if out.hour is not None and not out.slots:
-            out.slots = {"morning" if out.hour < 12 else "evening"}
+        hours = _hours_from_clock(text)
+        out.hour = hours[0] if hours else None
+        if hours and not out.slots:
+            out.slots = {"morning" if h < 12 else "evening" for h in hours}
         if not days:
             # "weekly" with no day named. We do not know WHICH day, and guessing
             # one is a dose on the wrong day every week.
@@ -247,13 +254,34 @@ def parse_medication(med: dict[str, Any]) -> Medication:
 
 
     slots = _slots_from_words(text)
-    hour = _hour_from_clock(text)
-    if not slots and hour is not None:
-        slots = {"morning" if hour < 12 else "evening"}
+
+    # A scheduled interval regimen is not a clock time. "every 12 hours" used
+    # to hand 12 to the clock parser and come back as a single noon dose --
+    # half the day's medication, silently.
+    iv = _INTERVAL.search(text)
+    if iv and not slots:
+        hours = float(iv.group(1))
+        out.min_interval_hours = hours
+        if hours >= 24:
+            out.schedule = Schedule.UNKNOWN     # once daily, but WHEN?
+        elif hours == 12:
+            out.schedule = Schedule.DAILY       # twice daily: the two slots fit
+            out.slots = {"morning", "evening"}
+        else:
+            # Three or more doses a day. Cura has two delivery slots, so this
+            # regimen CANNOT BE EXPRESSED, and announcing the two it can fit
+            # would present a partial schedule as a complete one. Say so
+            # instead of dropping doses quietly.
+            out.schedule = Schedule.UNKNOWN
+        return out
+
+    hours = _hours_from_clock(text)
+    if not slots and hours:
+        slots = {"morning" if h < 12 else "evening" for h in hours}
     if slots:
         out.schedule = Schedule.DAILY
         out.slots = slots
-        out.hour = hour
+        out.hour = hours[0] if hours else None
     return out
 
 
@@ -364,7 +392,18 @@ def needs_clarification(medications: list[dict[str, Any]]) -> list[tuple[str, st
     out = []
     for raw in medications or []:
         m = parse_medication(raw)
-        if m.schedule is Schedule.UNKNOWN:
+        if m.schedule is Schedule.UNKNOWN and m.min_interval_hours:
+            iv = m.min_interval_hours
+            if iv >= 24:
+                out.append((m.name, "This one is every %g hours — I don't know "
+                                    "what time of day to start." % iv))
+            else:
+                out.append((m.name,
+                            "This one is every %g hours, which is more doses "
+                            "than my morning and evening check-ins can cover. "
+                            "I'd rather say nothing than remind about only "
+                            "some of them." % iv))
+        elif m.schedule is Schedule.UNKNOWN:
             out.append((m.name, "I don't know when this one is taken."))
         elif m.schedule is Schedule.WEEKLY and not m.days:
             out.append((m.name, "I know this is weekly but not which day."))

@@ -218,3 +218,49 @@ class TestCaregiverIsToldWhatCuraIsNotDoing:
         assert "not what time of day" in qs["Alendronate"]
         assert "how long to wait" in qs["Oxycodone"]
         assert "don't know when" in qs["Donepezil"]
+
+
+class TestFindingsFromTheOvernightShakedown:
+    """Three parser defects confirmed by execution in the 2026-09-02 review."""
+
+    def test_time_of_day_plurals_are_matched(self):
+        """_DAY_RE was given a trailing s? and these were not, so "Thursday
+        mornings" parsed weekly-with-no-slot and was never announced at all."""
+        assert _p("Thursday mornings").slots == {"morning"}
+        assert _p("Thursday mornings").days == {3}
+        assert _p("mornings").slots == {"morning"}
+        assert _p("evenings").slots == {"evening"}
+        assert _p("nights").slots == {"evening"}
+
+    def test_every_stated_clock_time_is_kept(self):
+        """Keeping only the first silently dropped the second dose."""
+        assert _p("2 tabs at 8am and 1 tab at 8pm").slots == {"morning", "evening"}
+        assert _p("8am and 8pm").slots == {"morning", "evening"}
+
+    def test_twelve_hourly_is_twice_daily_not_a_noon_dose(self):
+        """"every 12 hours" handed 12 to the clock parser and came back as a
+        single noon dose — half the day's medication, silently."""
+        m = _p("every 12 hours")
+        assert m.schedule is Schedule.DAILY
+        assert m.slots == {"morning", "evening"}
+
+    def test_a_regimen_with_more_doses_than_slots_is_refused_not_truncated(self):
+        """Three doses a day cannot be expressed in two check-ins. Announcing
+        the two that fit would present a partial schedule as a complete one."""
+        m = _p("every 8 hours")
+        assert m.schedule is Schedule.UNKNOWN
+        assert m.slots == set()
+        why = dict(needs_clarification([{"name": "Amoxicillin",
+                                         "time": "every 8 hours"}]))
+        assert "more doses" in why["Amoxicillin"]
+
+    def test_once_daily_still_asks_what_time(self):
+        m = _p("every 24 hours")
+        assert m.schedule is Schedule.UNKNOWN
+        why = dict(needs_clarification([{"name": "D", "time": "every 24 hours"}]))
+        assert "what time of day" in why["D"]
+
+    def test_prn_intervals_are_still_prn_not_daily(self):
+        """The interval branch must not capture as-needed drugs."""
+        m = _p("every 4 hours as needed")
+        assert m.schedule is Schedule.PRN and m.announceable is False
