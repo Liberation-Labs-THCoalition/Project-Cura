@@ -13,8 +13,12 @@ The webhook handles Margaret's responses during calls.
 from __future__ import annotations
 
 import argparse
+import os
+import logging
 import sys
 
+
+logger = logging.getLogger(__name__)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -116,7 +120,23 @@ def main() -> None:
             print("      cura setup\n")
             sys.exit(1)
         responder = _build_responder(cfg_path)
-        app = create_app(responder=responder, elder_name=args.elder_name)
+        # create_app REFUSES to build without an auth token, by design -- an
+        # auth layer that silently no-ops reports as present. That refusal made
+        # this entrypoint unstartable for as long as the call site did not pass
+        # one, on every config, including configs with a perfectly good token in
+        # them. The token was two lines away the whole time. Two halves, both
+        # correct, never joined -- the same defect this project keeps producing.
+        tw, public_url = _twilio_settings(cfg_path)
+        token = tw.get("auth_token", "")
+        if not token:
+            print("\n  Cura cannot verify that incoming calls are really from")
+            print("  Twilio without the account's auth token, and answering")
+            print("  unverified requests would let anyone tell Cura the")
+            print("  medication was taken. Run this first:\n")
+            print("      cura add-phone\n")
+            sys.exit(1)
+        app = create_app(responder=responder, elder_name=args.elder_name,
+                         auth_token=token, public_url=public_url)
         print(f"Cura webhook server starting on port {args.port}")
         print(f"Configure Twilio to point to: http://your-server:{args.port}/voice/inbound")
         app.run(host="0.0.0.0", port=args.port)
@@ -131,6 +151,42 @@ def main() -> None:
         print("  python -m cura console --name Margaret --demo   # See a demo check-in")
 
 
+
+
+
+
+def _report_call(which: str, name: str, result) -> None:
+    """Say what happened, not what was attempted.
+
+    Both senders discarded the CallResult and printed "check-in sent"
+    unconditionally, so the only record that a check-in occurred was a line
+    printed whether or not it did. For a caregiver reading a log to find out
+    whether his wife was reached, that is worse than no log: it is a log that
+    always says yes.
+    """
+    ok = bool(getattr(result, "success", False) or getattr(result, "sid", ""))
+    if ok:
+        print(f"[{_now()}] {which} check-in placed to {name}")
+        return
+    err = getattr(result, "error", "") or "no result returned"
+    print(f"[{_now()}] {which} check-in FAILED for {name}: {err}")
+    logger.error("%s check-in to %s failed: %s", which, name, err)
+
+
+def _twilio_settings(config_path: str) -> tuple[dict, str]:
+    """The Twilio block and the publicly reachable base URL.
+
+    Both live in the config; the URL may also come from the environment, since
+    it is the one setting that changes when a tunnel restarts.
+    """
+    import json as _json
+    try:
+        with open(config_path) as f:
+            data = _json.load(f)
+    except (OSError, ValueError):
+        return {}, os.environ.get("CURA_PUBLIC_URL", "")
+    return (data.get("twilio", {}) or {},
+            os.environ.get("CURA_PUBLIC_URL", "") or data.get("public_url", ""))
 
 
 def _build_responder(config_path: str):
@@ -325,24 +381,25 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
 
     async def do_morning():
         checkin = composer.compose_morning(pulse_config)
-        await voice.call(
+        result = await voice.call(
             to_number=profile.phone,
             messages=checkin.all_messages,
             gather_response=True,
             gather_action="/voice/checkin-response",
             status_callback="/voice/checkin-response",
         )
-        print(f"[{_now()}] Morning check-in sent to {name}")
+        _report_call("Morning", name, result)
 
     async def do_evening():
         checkin = composer.compose_evening(pulse_config)
-        await voice.call(
+        result = await voice.call(
             to_number=profile.phone,
             messages=checkin.all_messages,
             gather_response=True,
+            gather_action="/voice/evening-response",
             status_callback="/voice/evening-response",
         )
-        print(f"[{_now()}] Evening check-in sent to {name}")
+        _report_call("Evening", name, result)
 
     def morning_job():
         asyncio.run(do_morning())

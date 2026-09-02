@@ -180,7 +180,9 @@ def main() -> None:
                         help="Medication names (for demo)")
     args = parser.parse_args()
 
-    medications = [{"name": m, "time": "morning"} for m in args.medications]
+    from cura.pulse.medication import split_medication
+    # Never fabricate a timing. An invented "morning" is announced as fact.
+    medications = [split_medication(m) for m in args.medications]
 
     profile = ElderProfile(
         name=args.name,

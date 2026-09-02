@@ -70,6 +70,19 @@ BASE_SIZES = dict(q=26, body=20, help=17, btn=19)
 ENTER_GUARD_MS = 600
 
 
+
+def _parse_meds(raw):
+    """Keep the timing the caregiver wrote instead of inventing "morning".
+
+    Same fix as the terminal wizard: an invented timing is announced as fact,
+    and a fabricated "morning" turns an as-needed opioid into a daily prompt.
+    """
+    from cura.pulse.medication import parse_medication_list, split_medication
+    if isinstance(raw, str):
+        return parse_medication_list(raw)
+    return [split_medication(m) if isinstance(m, str) else m for m in (raw or [])]
+
+
 def _load() -> dict:
     try:
         return json.loads(STATE.read_text())
@@ -363,7 +376,7 @@ def run() -> int:
             "name": state["name"],
             "preferred_name": state.get("preferred_name") or state["name"].split()[0],
             "phone": _norm_phone(state["phone"]),
-            "medications": [{"name": m, "time": "morning"} for m in meds],
+            "medications": _parse_meds(meds),
             "emergency_contacts": ([{"name": state.get("caregiver_name", ""),
                                      "phone": _norm_phone(state["caregiver_phone"]),
                                      "relation": "caregiver"}]

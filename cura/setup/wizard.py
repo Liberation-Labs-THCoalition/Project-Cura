@@ -171,6 +171,40 @@ def to_hour24(v: str) -> int:
 
 # ---------------------------------------------------------------- the wizard
 
+def _meds_with_timings(state: dict, first: str, ask) -> list[dict]:
+    """Medications with the timing the caregiver actually gave, asking about
+    any that are still unclear.
+
+    The wizard used to store each entry whole as the drug NAME and fabricate
+    "morning" as the time. So "oxycodone as needed for pain" became a daily
+    8am announcement of a rescue opioid, "Alendronate on Sundays" was announced
+    seven days a week, and -- worst of the three -- both caregiver-warning
+    lists reported ALL CLEAR, because a fabricated timing does not look
+    unknown. A check that cannot fail is indistinguishable from a check that
+    passed.
+
+    Nothing here invents a timing. An entry Cura cannot place stays empty,
+    which routes to Schedule.UNKNOWN: silence, and a question.
+    """
+    from cura.pulse.medication import (parse_medication_list, parse_medication,
+                                       Schedule)
+    meds = parse_medication_list(state.get("meds") or "")
+    for i, med in enumerate(meds):
+        if parse_medication(med).schedule is not Schedule.UNKNOWN:
+            continue
+        answer = ask(state, f"med_time_{i}",
+                     f"When does {first} take {med['name']}?",
+                     "For example: in the morning, at bedtime, twice daily, "
+                     "on Sundays, or as needed for pain. "
+                     "If you're not sure, press Enter — Cura will stay quiet "
+                     "about this one rather than guess at the wrong time.",
+                     optional=True)
+        if answer.strip():
+            med["time"] = answer.strip()
+            state[f"med_time_{i}"] = answer.strip()
+    return meds
+
+
 def run() -> int:
     state = load()
     resuming = bool(state)
@@ -226,10 +260,14 @@ def run() -> int:
 
     ask(state, "meds",
         f"Does {first} take any regular medications?",
-        "Just list them separated by commas — for example: "
-        "Lisinopril, Metformin. Cura will offer gentle reminders. "
-        "Don't worry about doses or exact spelling.",
+        "List them separated by commas, and say when each one is taken — "
+        "for example: Lisinopril in the morning, Metformin twice daily, "
+        "Alendronate on Sundays, oxycodone as needed for pain. "
+        "Don't worry about doses or exact spelling. "
+        "If you're not sure about one, just name it and Cura will ask.",
         optional=True)
+
+    _meds_with_timings(state, first, ask)
 
     ask(state, "address",
         f"What is {first}'s address?",
@@ -237,12 +275,16 @@ def run() -> int:
         optional=True)
 
     # ---- build the real config -------------------------------------------
-    meds = [m.strip() for m in (state.get("meds") or "").split(",") if m.strip()]
+    # The timing he wrote is kept. Previously every entry was stored whole as
+    # the NAME with "morning" fabricated as the time, so "oxycodone as needed
+    # for pain" became a daily 8am announcement of a rescue opioid, and both
+    # caregiver-warning lists reported all clear because nothing looked unknown.
+    meds = _meds_with_timings(state, first, ask)
     cfg = {
         "name": state["name"],
         "preferred_name": state["preferred_name"],
         "phone": norm_phone(state["phone"]),
-        "medications": [{"name": m, "time": "morning"} for m in meds],
+        "medications": meds,
         "emergency_contacts": [{
             "name": state["caregiver_name"],
             "phone": norm_phone(state["caregiver_phone"]),

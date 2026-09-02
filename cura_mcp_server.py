@@ -76,7 +76,9 @@ def _build_profile(
     config: dict,
     medications: list[str] | None = None,
 ) -> ElderProfile:
-    meds = [{"name": m, "time": "morning"} for m in (medications or [])]
+    from cura.pulse.medication import split_medication
+    # Never fabricate a timing. An invented "morning" is announced as fact.
+    meds = [split_medication(m) for m in (medications or [])]
     return ElderProfile(
         name=elder_name,
         preferred_name=elder_name,

@@ -377,3 +377,70 @@ def needs_clarification(medications: list[dict[str, Any]]) -> list[tuple[str, st
                         "This one is as-needed, but I wasn't told how long to "
                         "wait between doses."))
     return out
+
+
+# Cues that mark where a drug's NAME ends and its TIMING begins. Deliberately
+# conservative: only phrases that are unambiguously about when. A bare
+# "evening" is not here, because "Evening Primrose Oil" is a real supplement
+# and mis-splitting a name is worse than asking a question.
+_TIMING_CUE = re.compile(
+    r"\s(?="
+    r"as[- ]needed\b|as needed\b|prn\b|if needed\b|when needed\b|when required\b"
+    r"|every\s+\d|every\s+other\s+day\b|every\s+(?:mon|tue|wed|thu|fri|sat|sun)"
+    r"|q\d+\s*h\b|(?:bid|tid|qid|qhs|qam|qpm|qod)\b"
+    r"|at\s+(?:\d|noon|night|bed|bedtime|breakfast|lunch|dinner|supper|"
+    r"morning|midday)"
+    r"|in\s+the\s+(?:morning|evening|afternoon)\b"
+    r"|(?:once|twice|three times|3 times)\s+(?:a\s+)?(?:day|daily|week|weekly)\b"
+    r"|(?:daily|weekly|nightly)\b"
+    r"|(?:mon|tues?|wednes|thurs?|fri|satur|sun)days?\b"
+    r"|with\s+(?:meals|breakfast|lunch|dinner|food)\b"
+    r"|before\s+(?:bed|breakfast|meals|dinner)\b"
+    r"|after\s+(?:meals|breakfast|dinner)\b"
+    r"|\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
+    r")", re.I)
+
+
+def split_medication(entry: str) -> dict[str, str]:
+    """Separate a drug's name from the timing written alongside it.
+
+    The setup wizard asked for a comma-separated list of medications and told
+    the caregiver not to worry about doses, so he wrote what a person writes --
+    "Oxycodone as needed for pain, Alendronate on Sundays, Warfarin at bedtime"
+    -- and every word of it was stored as the NAME, with the timing field
+    hardcoded to "morning". The timing was there in his own words the whole
+    time and was thrown away.
+
+    Conservative by design. When no unambiguous timing cue is present the whole
+    entry stays the name and the timing is empty, which routes to
+    Schedule.UNKNOWN: silence, plus a question for the caregiver. Asking is
+    cheap. A mis-split name attached to a confident daily reminder is not.
+    """
+    entry = " ".join(str(entry or "").split())
+    if not entry:
+        return {"name": "", "time": ""}
+    m = _TIMING_CUE.search(entry)
+    if not m or m.start() == 0:
+        return {"name": entry, "time": ""}
+    name = entry[:m.start()].strip(" ,-")
+    time = entry[m.start():].strip(" ,-")
+    # "Alendronate on Sundays" splits before "Sundays", leaving the preposition
+    # stranded on the drug name. Move it across to the timing where it belongs.
+    trailing = re.search(r"\s+(on|at|in|every|each)$", name, re.I)
+    if trailing:
+        name = name[:trailing.start()].strip(" ,-")
+        time = f"{trailing.group(1)} {time}"
+    return {"name": name, "time": time}
+
+
+def parse_medication_list(raw: str) -> list[dict[str, str]]:
+    """Turn what a caregiver typed into medications with their timings kept.
+
+    Splits on commas and newlines, but not on a comma inside a timing phrase
+    like "every 4-6 hours, no more than 4 in 24 hours" -- that comma belongs to
+    the drug before it.
+    """
+    parts = [p.strip() for p in re.split(r"[\n;]+|,(?![^,]*\b(?:no more than|"
+                                         r"max|maximum|up to|not more than)\b)",
+                                         str(raw or "")) if p and p.strip()]
+    return [split_medication(p) for p in parts if split_medication(p)["name"]]
