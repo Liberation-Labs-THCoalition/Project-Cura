@@ -120,3 +120,63 @@ class TestDryRunCalls:
         voice = CuraVoice(dry_run=True)
         await voice.send_sms("+15551234567", "Test")
         assert len(voice.sms_log) == 1
+
+
+class TestTwiMLEscaping:
+    """Names and medications reach TwiML straight from the household's config.
+
+    An ampersand or an angle bracket in either produces malformed XML that
+    Twilio rejects, so the failure is not a mispronunciation -- it is a call
+    that never happens. "Tylenol & Lisinopril" and a caregiver named
+    "Tom & Barbara" were both enough to cancel every reminder silently.
+    """
+
+    HOSTILE = [
+        "Tom & Barbara are coming by.",
+        "Take 1 tablet if pain < 5 or > 7.",
+        "Time for your Tylenol & Lisinopril.",
+        'She said "I already took it".',
+        "Hello</Say><Hangup/><Say>",
+        """O'Brien & Sons <"test"> & more""",
+    ]
+
+    def _voice(self):
+        from cura.comms.voice import CuraVoice
+        return CuraVoice(account_sid="x", auth_token="y",
+                         from_number="+15551112222",
+                         public_url="https://example.org")
+
+    @pytest.mark.parametrize("text", HOSTILE)
+    def test_voice_twiml_stays_well_formed(self, text):
+        import xml.etree.ElementTree as ET
+        ET.fromstring(self._voice()._build_twiml([text]))
+
+    @pytest.mark.parametrize("text", HOSTILE)
+    def test_webhook_twiml_stays_well_formed(self, text):
+        import xml.etree.ElementTree as ET
+        from cura.comms import webhook as wh
+        ET.fromstring(wh._twiml(wh._say(text)))
+
+    @pytest.mark.parametrize("text", HOSTILE)
+    def test_spoken_text_survives_verbatim(self, text):
+        """Escaping must not change what she hears."""
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(self._voice()._build_twiml([text]))
+        assert root.find("Say").text == text
+
+    def test_markup_in_text_is_spoken_not_executed(self):
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(
+            self._voice()._build_twiml(["Hello</Say><Hangup/><Say>"]))
+        assert root.find("Hangup") is None, "markup in a name became TwiML"
+        assert root.find(".//Hangup") is None
+
+    def test_attribute_injection_is_contained(self):
+        """A poisoned public URL must not close the attribute and add verbs."""
+        import xml.etree.ElementTree as ET
+        v = self._voice()
+        v._public_url = 'https://x.org/"><Hangup/><Gather action="'
+        root = ET.fromstring(
+            v._build_twiml(["hi"], gather=True,
+                           gather_action=v._gather_url("/voice/r")))
+        assert root.find(".//Hangup") is None

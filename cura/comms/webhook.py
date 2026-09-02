@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from xml.sax.saxutils import escape as _xml_escape, quoteattr as _xml_attr
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +28,23 @@ _rate = "slow"
 
 
 def _say(text: str) -> str:
-    """Build a TwiML Say element."""
-    return f'<Say voice="{_voice}" rate="{_rate}">{text}</Say>'
+    """Build a TwiML Say element.
+
+    Everything spoken is escaped. The text reaches here carrying names and
+    medications straight out of the household's own configuration, and an
+    ampersand or an angle bracket in either one produces malformed XML that
+    Twilio rejects outright -- so "Tylenol & Lisinopril" does not mispronounce,
+    it silently cancels the reminder. A caregiver named "Tom & Barbara" breaks
+    every call in the same way.
+    """
+    return f'<Say voice={_xml_attr(_voice)} rate={_xml_attr(_rate)}>{_xml_escape(text)}</Say>'
 
 
 def _gather(text: str, action_path: str, input_type: str = "dtmf speech") -> str:
     """Build a TwiML Gather element that speaks and waits for input."""
     return (
-        f'<Gather input="{input_type}" timeout="10" action="{action_path}">'
+        f'<Gather input={_xml_attr(input_type)} timeout="10" '
+        f'action={_xml_attr(action_path)}>'
         f'{_say(text)}'
         f'</Gather>'
         f'{_say("I didn\'t hear a response. I\'ll check back later. Take care.")}'

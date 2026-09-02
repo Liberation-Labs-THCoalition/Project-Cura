@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import os
+from xml.sax.saxutils import escape as _xml_escape, quoteattr as _xml_attr
 
 import logging
 from dataclasses import dataclass, field
@@ -147,18 +148,20 @@ class CuraVoice:
             else:
                 parts.append(
                     f'  <Gather input="dtmf speech" timeout="10" numDigits="1" '
-                    f'action="{gather_action}" method="POST">')
+                    f'action={_xml_attr(gather_action)} method="POST">')
 
         for msg in messages:
             parts.append(
-                f'  <Say voice="{self._voice}" rate="{self._rate}">'
-                f'{msg}</Say>'
+                f'  <Say voice={_xml_attr(self._voice)} '
+                f'rate={_xml_attr(self._rate)}>'
+                f'{_xml_escape(msg)}</Say>'
             )
             parts.append('  <Pause length="1"/>')
 
         if gather:
             parts.append('  </Gather>')
-            parts.append(f'  <Say voice="{self._voice}" rate="{self._rate}">'
+            parts.append(f'  <Say voice={_xml_attr(self._voice)} '
+                         f'rate={_xml_attr(self._rate)}>'
                          f'I didn\'t hear a response. I\'ll check back later. '
                          f'Take care.</Say>')
 
