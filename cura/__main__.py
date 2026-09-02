@@ -228,7 +228,8 @@ def _build_responder(config_path: str):
 
     voice = CuraVoice(account_sid=tw.get("account_sid", ""),
                       auth_token=tw.get("auth_token", ""),
-                      from_number=tw.get("phone_number", ""))
+                      from_number=tw.get("phone_number", ""),
+                      config_path=config_path)
     return CuraResponder(on_help_requested=build_escalation(voice, profile))
 
 
@@ -354,6 +355,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
         auth_token=twilio_config.get("auth_token", ""),
         from_number=twilio_config.get("phone_number", ""),
         dry_run=dry_run,
+        config_path=config_path,
     )
 
     name = profile.display_name

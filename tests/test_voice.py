@@ -180,3 +180,52 @@ class TestTwiMLEscaping:
             v._build_twiml(["hi"], gather=True,
                            gather_action=v._gather_url("/voice/r")))
         assert root.find(".//Hangup") is None
+
+
+class TestPublicUrlResolvesFresh:
+    """`cura run` is long-lived and built CuraVoice once, so a tunnel address
+    that rotates left Cura holding a dead URL — and the symptom is silent: the
+    call still places, the Gather just posts into nothing.
+
+    Rather than depend on a stability guarantee from the other side of an
+    integration we cannot verify, resolve it fresh each time.
+    """
+
+    def _voice(self, cfg=None, ctor=""):
+        from cura.comms.voice import CuraVoice
+        return CuraVoice(account_sid="x", auth_token="y", from_number="+1555",
+                         public_url=ctor, config_path=str(cfg) if cfg else "")
+
+    def _cfg(self, tmp_path, url):
+        import json
+        p = tmp_path / "m.json"
+        p.write_text(json.dumps({"name": "M", "public_url": url}))
+        return p
+
+    def test_a_rotated_url_is_picked_up_without_a_restart(self, tmp_path):
+        cfg = self._cfg(tmp_path, "https://first.example.org")
+        v = self._voice(cfg)
+        assert v._gather_url("/x") == "https://first.example.org/x"
+        self._cfg(tmp_path, "https://rotated.example.org")
+        assert v._gather_url("/x") == "https://rotated.example.org/x"
+
+    def test_environment_takes_precedence(self, tmp_path, monkeypatch):
+        cfg = self._cfg(tmp_path, "https://cfg.example.org")
+        monkeypatch.setenv("CURA_PUBLIC_URL", "https://env.example.org")
+        assert self._voice(cfg)._gather_url("/x") == "https://env.example.org/x"
+
+    def test_a_missing_config_is_not_fatal(self, tmp_path):
+        v = self._voice(tmp_path / "gone.json", ctor="https://ctor.example.org")
+        assert v._gather_url("/x") == "https://ctor.example.org/x"
+
+    def test_a_half_written_config_is_not_fatal(self, tmp_path):
+        p = tmp_path / "m.json"
+        p.write_text('{"name": "M", "public_ur')      # truncated mid-write
+        v = self._voice(p, ctor="https://ctor.example.org")
+        assert v._gather_url("/x") == "https://ctor.example.org/x"
+
+    def test_with_no_url_anywhere_it_still_refuses_rather_than_guessing(self):
+        v = self._voice()
+        assert v._gather_url("/x") == ""
+        assert "<Gather" not in v._build_twiml(["hi"], gather=True,
+                                               gather_action=v._gather_url("/x"))

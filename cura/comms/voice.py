@@ -70,6 +70,7 @@ class CuraVoice:
         speech_rate: str = "slow",
         dry_run: bool = False,
         public_url: str = "",
+        config_path: str = "",
     ) -> None:
         self._sid = account_sid
         self._token = auth_token
@@ -82,6 +83,14 @@ class CuraVoice:
         # help" reached nobody. Env var so a deployment can set it without
         # touching the config file that holds the auth token.
         self._public_url = public_url or os.environ.get("CURA_PUBLIC_URL", "")
+        # Re-read from here at call time. `cura run` is a long-lived process
+        # that builds this once, so a tunnel whose address rotates would leave
+        # Cura holding a dead URL -- and the symptom is silent: the call still
+        # places, the Gather just posts into nothing. Rather than depend on a
+        # stability guarantee from the other side of an integration I cannot
+        # verify, resolve it fresh each time. Reading a small JSON file twice a
+        # day costs nothing; a keypress that reaches nobody costs everything.
+        self._config_path = config_path
         self._call_log: list[CallResult] = []
         self._sms_log: list[SMSResult] = []
         self._client = None
@@ -97,6 +106,26 @@ class CuraVoice:
                 self._dry_run = True
         return self._client
 
+    def _current_public_url(self) -> str:
+        """The address Twilio can reach us on, resolved fresh.
+
+        Precedence: environment, then the config file (re-read), then whatever
+        was passed at construction. The re-read is the point -- see __init__.
+        """
+        env = os.environ.get("CURA_PUBLIC_URL", "")
+        if env:
+            return env
+        if self._config_path:
+            try:
+                import json
+                with open(self._config_path) as f:
+                    live = (json.load(f) or {}).get("public_url", "")
+                if live:
+                    return live
+            except (OSError, ValueError):
+                pass        # a missing or half-written config is not fatal here
+        return self._public_url
+
     def _gather_url(self, path_or_url: str) -> str:
         """Resolve a Gather action to an absolute URL Twilio can reach.
 
@@ -108,7 +137,7 @@ class CuraVoice:
             return ""
         if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
             return path_or_url
-        base = (self._public_url or "").rstrip("/")
+        base = (self._current_public_url() or "").rstrip("/")
         if not base:
             logger.error(
                 "No public URL configured, so %r cannot be made reachable by "
