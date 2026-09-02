@@ -40,6 +40,9 @@ def main() -> None:
     )
     webhook_parser.add_argument("--port", type=int, default=5000)
     webhook_parser.add_argument("--elder-name", type=str, default="friend")
+    webhook_parser.add_argument("--config", type=str, default=None,
+                                help="Path to the config setup created. Required: "
+                                     "without it Cura cannot summon help.")
 
     # Run (scheduled calls)
     run_parser = subparsers.add_parser(
@@ -103,7 +106,16 @@ def main() -> None:
     elif args.command == "webhook":
         from cura.comms.responder import CuraResponder
         from cura.comms.webhook import create_app
-        responder = CuraResponder()
+        # Cura must not answer the phone unless it can summon help. Answering
+        # without an escalation path is worse than not answering: a false
+        # assurance stops someone calling out.
+        cfg_path = args.config or _default_config_path()
+        if not cfg_path:
+            print("\n  Cura needs to know who to call for help before it can answer")
+            print("  the phone. Run this first:\n")
+            print("      cura setup\n")
+            sys.exit(1)
+        responder = _build_responder(cfg_path)
         app = create_app(responder=responder, elder_name=args.elder_name)
         print(f"Cura webhook server starting on port {args.port}")
         print(f"Configure Twilio to point to: http://your-server:{args.port}/voice/inbound")
@@ -118,6 +130,47 @@ def main() -> None:
         print("  python -m cura console --name Margaret          # Chat with Cura")
         print("  python -m cura console --name Margaret --demo   # See a demo check-in")
 
+
+
+
+def _build_responder(config_path: str):
+    """Construct a responder that can actually summon help, or exit.
+
+    Refusing to start is deliberate. The alternative is a Cura that answers
+    "I fell and I can't get up" with "help is on the way" and calls nobody,
+    which is what it did before this existed.
+    """
+    import json as _json
+    from cura.comms.responder import CuraResponder
+    from cura.comms.voice import CuraVoice
+    from cura.comms.escalation import build_escalation, escalation_readiness
+    from cura.pulse.eldercare_pulse import ElderProfile
+
+    with open(config_path) as f:
+        data = _json.load(f)
+    tw = data.pop("twilio", {})
+    profile = ElderProfile(
+        name=data.get("name", ""), preferred_name=data.get("preferred_name", ""),
+        phone=data.get("phone", ""), medications=data.get("medications", []),
+        emergency_contacts=data.get("emergency_contacts", []),
+        primary_caregiver=data.get("primary_caregiver", {}),
+        address=data.get("address", ""),
+        morning_time=data.get("morning_time", 8),
+        evening_time=data.get("evening_time", 20),
+    )
+    problems = escalation_readiness(profile)
+    if problems:
+        print("\n  Cura cannot answer the phone yet, because it would not be able")
+        print("  to get help if it was asked for:\n")
+        for p in problems:
+            print(f"      - {p}")
+        print("\n  Run 'cura setup' again to fill that in. Nothing else is lost.\n")
+        sys.exit(1)
+
+    voice = CuraVoice(account_sid=tw.get("account_sid", ""),
+                      auth_token=tw.get("auth_token", ""),
+                      from_number=tw.get("phone_number", ""))
+    return CuraResponder(on_help_requested=build_escalation(voice, profile))
 
 
 def _default_config_path():

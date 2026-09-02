@@ -186,6 +186,9 @@ if __name__ == "__main__":
     parser.add_argument("--elder-name", type=str, default="friend")
     args = parser.parse_args()
 
-    responder = CuraResponder()
-    app = create_app(responder=responder, elder_name=args.elder_name)
-    app.run(host="0.0.0.0", port=args.port, debug=True)
+    # Standalone entrypoint. It cannot build an escalation path (it has no
+    # config), so it refuses rather than serving a Cura that promises help it
+    # cannot send. Use "cura webhook --config ..." instead.
+    print("Run this through the CLI so Cura knows who to call for help:")
+    print("    cura webhook --config <the file setup created>")
+    raise SystemExit(1)
