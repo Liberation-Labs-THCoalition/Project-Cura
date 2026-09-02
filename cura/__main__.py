@@ -329,6 +329,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
             to_number=profile.phone,
             messages=checkin.all_messages,
             gather_response=True,
+            gather_action="/voice/checkin-response",
             status_callback="/voice/checkin-response",
         )
         print(f"[{_now()}] Morning check-in sent to {name}")

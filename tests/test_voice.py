@@ -34,11 +34,38 @@ class TestTwiMLGeneration:
         assert "<Pause" in twiml
 
     def test_gather_twiml(self):
-        voice = CuraVoice(dry_run=True)
-        twiml = voice._build_twiml(["Press 1"], gather=True)
+        voice = CuraVoice(dry_run=True, public_url="https://cura.example.org")
+        twiml = voice._build_twiml(
+            ["Press 1"], gather=True,
+            gather_action=voice._gather_url("/voice/checkin-response"))
         assert "<Gather" in twiml
         assert "timeout" in twiml
         assert "didn't hear" in twiml
+
+    def test_gather_has_an_action_url(self):
+        """A Gather without an action posts back to the URL that served the
+        TwiML — and these calls are created with inline twiml=, which has no
+        URL. The keypress went nowhere. Pressing 2 for help reached nobody."""
+        voice = CuraVoice(dry_run=True, public_url="https://cura.example.org")
+        twiml = voice._build_twiml(
+            ["Press 1"], gather=True,
+            gather_action=voice._gather_url("/voice/checkin-response"))
+        assert 'action="https://cura.example.org/voice/checkin-response"' in twiml
+
+    def test_no_gather_offered_when_the_answer_cannot_reach_us(self):
+        """Better to not offer the button than to offer one that does nothing.
+        Someone pressing 2 for help and hearing nothing back is the failure
+        this whole path exists to prevent."""
+        voice = CuraVoice(dry_run=True, public_url="")
+        twiml = voice._build_twiml(["Press 1"], gather=True, gather_action="")
+        assert "<Gather" not in twiml
+
+    def test_relative_action_without_public_url_is_refused(self):
+        """A relative path is unreachable to Twilio, which dials in from the
+        public internet — and the failure is invisible from our side: the call
+        completes and no response ever arrives."""
+        voice = CuraVoice(dry_run=True, public_url="")
+        assert voice._gather_url("/voice/checkin-response") == ""
 
 
 @pytest.mark.asyncio

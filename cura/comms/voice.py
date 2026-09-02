@@ -16,6 +16,8 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -66,6 +68,7 @@ class CuraVoice:
         tts_voice: str = "Polly.Joanna",
         speech_rate: str = "slow",
         dry_run: bool = False,
+        public_url: str = "",
     ) -> None:
         self._sid = account_sid
         self._token = auth_token
@@ -73,6 +76,11 @@ class CuraVoice:
         self._voice = tts_voice
         self._rate = speech_rate
         self._dry_run = dry_run
+        # The address Twilio can reach us on. Without it a <Gather> has nowhere
+        # to post and the keypress is lost silently, which is how "press 2 for
+        # help" reached nobody. Env var so a deployment can set it without
+        # touching the config file that holds the auth token.
+        self._public_url = public_url or os.environ.get("CURA_PUBLIC_URL", "")
         self._call_log: list[CallResult] = []
         self._sms_log: list[SMSResult] = []
         self._client = None
@@ -88,17 +96,58 @@ class CuraVoice:
                 self._dry_run = True
         return self._client
 
-    def _build_twiml(self, messages: list[str], gather: bool = False) -> str:
+    def _gather_url(self, path_or_url: str) -> str:
+        """Resolve a Gather action to an absolute URL Twilio can reach.
+
+        Twilio dials in from the public internet; a relative path or a
+        localhost URL is unreachable to it, and the failure is invisible from
+        our side -- the call simply completes and no response ever arrives.
+        """
+        if not path_or_url:
+            return ""
+        if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+            return path_or_url
+        base = (self._public_url or "").rstrip("/")
+        if not base:
+            logger.error(
+                "No public URL configured, so %r cannot be made reachable by "
+                "Twilio. Set CURA_PUBLIC_URL to the address Twilio can reach.",
+                path_or_url)
+            return ""
+        return base + "/" + path_or_url.lstrip("/")
+
+    def _build_twiml(self, messages: list[str], gather: bool = False,
+                     gather_action: str = "") -> str:
         """Build TwiML for a voice call.
 
         Args:
             messages: List of sentences to speak
             gather: If True, wait for keypad input after speaking
+            gather_action: absolute URL Twilio POSTs the response to
+
+        A <Gather> with no action attribute posts back to the URL that served
+        the TwiML -- and these calls are created with inline `twiml=`, which has
+        no URL at all. So the keypress went nowhere. The routes to receive it
+        (/voice/checkin-response and friends) existed the whole time and were
+        simply never connected to anything, which is why pressing 2 for help
+        reached no one even once escalation was wired.
+
+        If gather is requested without an action URL we now refuse to emit the
+        <Gather> at all, and say so aloud, rather than inviting someone to press
+        a button that does nothing.
         """
         parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<Response>']
 
         if gather:
-            parts.append(f'  <Gather input="dtmf speech" timeout="10" numDigits="1">')
+            if not gather_action:
+                logger.error(
+                    "GATHER REQUESTED WITH NO ACTION URL. A keypress would go "
+                    "nowhere, so no prompt is offered. Set CURA_PUBLIC_URL.")
+                gather = False
+            else:
+                parts.append(
+                    f'  <Gather input="dtmf speech" timeout="10" numDigits="1" '
+                    f'action="{gather_action}" method="POST">')
 
         for msg in messages:
             parts.append(
@@ -122,6 +171,7 @@ class CuraVoice:
         messages: list[str],
         gather_response: bool = False,
         status_callback: str = "",
+        gather_action: str = "",
     ) -> CallResult:
         """Place an outbound voice call.
 
@@ -132,7 +182,8 @@ class CuraVoice:
             status_callback: URL for call status webhooks
         """
         now = datetime.now(timezone.utc)
-        twiml = self._build_twiml(messages, gather=gather_response)
+        twiml = self._build_twiml(messages, gather=gather_response,
+                                  gather_action=self._gather_url(gather_action))
 
         if self._dry_run:
             logger.info("[DRY RUN] Call to %s: %s", to_number, " | ".join(messages))
@@ -247,6 +298,7 @@ class CuraVoice:
             to_number=elder_phone,
             messages=messages,
             gather_response=True,
+            gather_action="/voice/checkin-response",
         )
 
     async def evening_checkin(self, profile) -> CallResult:
@@ -270,6 +322,7 @@ class CuraVoice:
             to_number=elder_phone,
             messages=messages,
             gather_response=True,
+            gather_action="/voice/checkin-response",
         )
 
     async def alert_caregiver(
@@ -305,6 +358,7 @@ class CuraVoice:
             to_number=caregiver_phone,
             messages=call_messages,
             gather_response=True,
+            gather_action="/voice/checkin-response",
         )
         sms_result = await self.send_sms(caregiver_phone, sms_text)
 

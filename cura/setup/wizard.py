@@ -58,9 +58,29 @@ def load() -> dict:
 
 
 def save(state: dict) -> None:
+    """Persist progress atomically, and never world-readable.
+
+    This file accumulates the Twilio auth token (add-phone writes it here),
+    both phone numbers, the medication list and the address. It was being
+    written at mode 664 -- readable by anyone with an account on the machine --
+    while add_phone carefully chmodded the *config* to 600. The secret was
+    protected in one of the two places it lands.
+
+    Directory and file are both narrowed, and the mode is set on the temp file
+    BEFORE the rename, so there is no window where the token exists at the
+    final path with the wrong permissions.
+    """
     STATE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(STATE.parent, 0o700)
+    except OSError:
+        pass
     tmp = STATE.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2))
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
     os.replace(tmp, STATE)  # atomic: an interruption never leaves a half-written file
 
 
@@ -242,6 +262,10 @@ def run() -> int:
     safe = re.sub(r"[^a-z0-9]+", "-", state["preferred_name"].lower()).strip("-") or "person"
     out = OUT_DIR / f"{safe}.json"
     out.write_text(json.dumps(cfg, indent=2))
+    try:
+        out.chmod(0o600)  # address, numbers, medication list
+    except OSError:
+        pass
 
     rule()
     say("All set. Cura is ready.", blank_after=1)

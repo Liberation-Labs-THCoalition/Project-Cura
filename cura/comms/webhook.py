@@ -41,11 +41,65 @@ def _gather(text: str, action_path: str, input_type: str = "dtmf speech") -> str
     )
 
 
+def _install_twilio_signature_check(app, auth_token: str, public_url: str = ""):
+    """Reject any request that Twilio did not sign.
+
+    Without this every route is open to anyone who learns the URL. Verified by
+    audit: an unsigned POST of Digits=1 to /voice/checkin-response returned 200
+    and fired on_medication_confirmed. That means a stranger -- or a scanner --
+    could tell Cura the medication was taken, and Cura would believe it and stop
+    following up. For a household where the whole point is noticing when she
+    did not take it, a forged confirmation is the most damaging thing you can
+    inject, and it looks exactly like success.
+
+    Twilio signs each request over the exact URL it called plus the sorted POST
+    body. The URL must match what Twilio used, which is why the public URL is
+    configurable rather than taken from the Host header -- a proxy that rewrites
+    Host silently breaks every signature and the failure looks like an attack.
+
+    Refuses to install without a token rather than allowing everything: an
+    auth layer that silently no-ops is worse than none, because it reports as
+    present.
+    """
+    from flask import request, abort
+
+    if not auth_token:
+        raise RuntimeError(
+            "Cura will not serve webhooks without a Twilio auth token to verify "
+            "signatures with. Anyone who found the URL could confirm medications "
+            "on the resident's behalf.")
+
+    try:
+        from twilio.request_validator import RequestValidator
+    except ImportError:
+        raise RuntimeError(
+            "twilio package is required to verify webhook signatures; refusing "
+            "to serve unverified requests.")
+
+    validator = RequestValidator(auth_token)
+
+    @app.before_request
+    def _verify():
+        if request.path == "/health" and request.method == "GET":
+            return None
+        base = (public_url or "").rstrip("/")
+        url = base + request.full_path.rstrip("?") if base else request.url
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if not validator.validate(url, request.form.to_dict(), signature):
+            logger.error(
+                "REJECTED UNSIGNED OR MISSIGNED REQUEST to %s from %s",
+                request.path, request.remote_addr)
+            abort(403)
+        return None
+
+
 def create_app(
     responder=None,
     elder_name: str = "",
     voice: str = "Polly.Joanna",
     rate: str = "slow",
+    auth_token: str = "",
+    public_url: str = "",
 ):
     """Create the Flask webhook app.
 
@@ -68,6 +122,8 @@ def create_app(
     _rate = rate
 
     app = Flask(__name__)
+    _install_twilio_signature_check(app, auth_token=auth_token,
+                                    public_url=public_url)
 
     @app.route("/health", methods=["GET"])
     def health():

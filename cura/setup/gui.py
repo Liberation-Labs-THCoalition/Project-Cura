@@ -79,8 +79,16 @@ def _load() -> dict:
 
 def _save(state: dict) -> None:
     STATE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(STATE.parent, 0o700)
+    except OSError:
+        pass
     tmp = STATE.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2))
+    try:
+        os.chmod(tmp, 0o600)   # before the rename: no window at the final path
+    except OSError:
+        pass
     os.replace(tmp, STATE)
 
 
@@ -370,6 +378,10 @@ def run() -> int:
         safe = re.sub(r"[^a-z0-9]+", "-", cfg["preferred_name"].lower()).strip("-") or "person"
         out = OUT_DIR / f"{safe}.json"
         out.write_text(json.dumps(cfg, indent=2))
+        try:
+            out.chmod(0o600)  # address, numbers, medication list
+        except OSError:
+            pass
         state["completed"] = True
         state["config_path"] = str(out)
         _save(state)
