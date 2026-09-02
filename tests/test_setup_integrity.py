@@ -139,3 +139,42 @@ class TestReadyIsAClaimThatGetsChecked:
         i = src.index("All set. Cura is ready.")
         assert "readiness_problems" in src[:i], \
             "'Cura is ready' is printed without checking readiness first"
+
+
+class TestEveryCommandWePrintIsReal:
+    """The wizards close by telling the household to type `cura rehearse` or
+    `cura add-phone`. There was no `cura` command: install.sh built a venv and
+    exec'd `python -m cura setup`, leaving nothing on PATH. Following our own
+    closing instructions produced "command not found" — to a man who had
+    already given up partway through one setup."""
+
+    def test_the_package_declares_a_cura_entry_point(self):
+        import tomllib
+        from pathlib import Path
+        repo = Path(__file__).resolve().parent.parent
+        pyproject = repo / "pyproject.toml"
+        assert pyproject.exists(), "no packaging file: `cura` cannot exist"
+        data = tomllib.loads(pyproject.read_text())
+        scripts = data.get("project", {}).get("scripts", {})
+        assert "cura" in scripts, "no `cura` console script declared"
+        assert scripts["cura"].startswith("cura.__main__:")
+
+    def test_every_command_named_in_our_own_messages_is_a_real_subcommand(self):
+        import argparse
+        import re
+        from pathlib import Path
+        from cura.__main__ import main  # noqa: F401
+
+        repo = Path(__file__).resolve().parent.parent
+        promised = set()
+        for py in (repo / "cura").rglob("*.py"):
+            for m in re.finditer(r"cura (setup|rehearse|add-phone|run|console|webhook)\b",
+                                 py.read_text()):
+                promised.add(m.group(1))
+        assert promised, "no commands found to check"
+
+        src = (repo / "cura/__main__.py").read_text()
+        real = set(re.findall(r"add_parser\(\s*[\"']([a-z-]+)[\"']", src))
+        assert real, "could not read the real subcommand list"
+        missing = promised - real
+        assert not missing, f"we tell people to type commands that do not exist: {missing}"

@@ -78,9 +78,41 @@ if ! "$VENV/bin/python" -c 'import tkinter' 2>/dev/null \
   SAY "You can still finish setup right here in this window — carrying on."
 fi
 
-# ---- hand off to the wizard ---------------------------------------------
+# ---- make `cura` a real command -----------------------------------------
+# Every wizard closes by telling him to type `cura rehearse` or `cura add-phone`.
+# Before this there was no such command and those instructions dead-ended at
+# "command not found".
 PYBIN="$VENV/bin/python"
 [ -x "$PYBIN" ] || PYBIN="$VENV/Scripts/python.exe"
 
+"$PYBIN" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+if ! "$PYBIN" -m pip install --quiet -e . >/dev/null 2>&1; then
+  SAY "Couldn't finish installing — carrying on with setup anyway."
+fi
+
+# Put it somewhere a plain terminal will find, without needing the venv.
+BINDIR="$HOME/.local/bin"
+mkdir -p "$BINDIR"
+CURA_BIN="$VENV/bin/cura"
+[ -x "$CURA_BIN" ] || CURA_BIN="$VENV/Scripts/cura.exe"
+if [ -x "$CURA_BIN" ]; then
+  ln -sf "$CURA_BIN" "$BINDIR/cura"
+else
+  printf '#!/bin/sh\nexec "%s" -m cura "$@"\n' "$PYBIN" > "$BINDIR/cura"
+  chmod +x "$BINDIR/cura"
+fi
+
+case ":$PATH:" in
+  *":$BINDIR:"*) ;;
+  *)
+    for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      [ -f "$RC" ] || continue
+      grep -qs 'HOME/.local/bin' "$RC" && continue
+      printf '\n# added by Cura setup\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
+    done
+    SAY "One note: the word 'cura' will work in any NEW terminal window."
+    ;;
+esac
+
 BIG "Now let's set Cura up for the person it will be calling."
-exec "$PYBIN" -m cura setup
+exec "$BINDIR/cura" setup

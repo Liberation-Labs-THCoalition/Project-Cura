@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cura"
+version = "0.1.0"
+description = "A patient companion that calls, listens, and knows who to tell."
+requires-python = ">=3.10"
+dependencies = [
+    "apscheduler>=3.10",
+    "flask>=3.0",
+    "twilio>=8.0",
+]
+
+# Every wizard closes by telling the household to type `cura rehearse` or
+# `cura add-phone`. Without this there is no such command: install.sh built a
+# venv and exec'd `python -m cura setup`, leaving nothing on PATH, so following
+# our own closing instructions produced "command not found". The household this
+# is being built for gave up partway through a setup once already; a dead
+# command at the end of a successful install is exactly the wall.
+[project.scripts]
+cura = "cura.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["cura*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
