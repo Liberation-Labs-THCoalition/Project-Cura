@@ -229,3 +229,49 @@ class TestPublicUrlResolvesFresh:
         assert v._gather_url("/x") == ""
         assert "<Gather" not in v._build_twiml(["hi"], gather=True,
                                                gather_action=v._gather_url("/x"))
+
+
+class TestCheckInReportingTellsTheTruth:
+    """Built from a REAL CallResult, not a stub with imagined fields.
+
+    The first version of _report_call read `success` and `sid`; CallResult has
+    `answered` and `call_sid`. Every successful check-in therefore reported
+    FAILED — a log that always said "sent" replaced by one that always said
+    "failed". A stub carrying the fields I assumed would have passed both.
+    """
+
+    def _report(self, result):
+        import io, contextlib
+        from cura.__main__ import _report_call
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            _report_call("Morning", "Margaret", result)
+        return buf.getvalue()
+
+    def _result(self, **kw):
+        from datetime import datetime, timezone
+        from cura.comms.voice import CallResult
+        base = dict(timestamp=datetime.now(timezone.utc),
+                    to_number="+13075550134", answered=False)
+        base.update(kw)
+        return CallResult(**base)
+
+    def test_an_answered_call_is_reported_as_placed(self):
+        out = self._report(self._result(answered=True, call_sid="CA123"))
+        assert "FAILED" not in out
+        assert "placed" in out
+
+    def test_an_unanswered_call_is_reported_as_failed(self):
+        out = self._report(self._result(answered=False, error="busy"))
+        assert "FAILED" in out and "busy" in out
+
+    def test_no_result_at_all_is_reported_as_failed(self):
+        assert "FAILED" in self._report(None)
+
+    def test_every_field_it_reads_exists_on_CallResult(self):
+        """Pins the actual contract, so a rename cannot silently invert this."""
+        from cura.comms.voice import CallResult
+        import dataclasses
+        fields = {f.name for f in dataclasses.fields(CallResult)}
+        for name in ("answered", "error"):
+            assert name in fields, f"_report_call reads {name!r}, CallResult has no such field"

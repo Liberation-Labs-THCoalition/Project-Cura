@@ -167,7 +167,13 @@ def _report_call(which: str, name: str, result) -> None:
     whether his wife was reached, that is worse than no log: it is a log that
     always says yes.
     """
-    ok = bool(getattr(result, "success", False) or getattr(result, "sid", ""))
+    # Read the fields CallResult ACTUALLY has (voice.py:31 — answered, call_sid,
+    # error). The first version of this read `success` and `sid`, neither of
+    # which exists, so `ok` was always False and every successful check-in
+    # reported FAILED. I replaced a log that always said "sent" with one that
+    # always said "failed"; neither is a report. Caught by constructing a real
+    # CallResult instead of imagining its shape.
+    ok = bool(getattr(result, "answered", False))
     if ok:
         print(f"[{_now()}] {which} check-in placed to {name}")
         return
