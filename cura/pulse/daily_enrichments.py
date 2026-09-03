@@ -301,8 +301,28 @@ class HomeSafetyAssessment:
             self._concerns.append((self.QUESTIONS[question_idx][1], concern))
 
     def get_summary(self) -> str:
+        """What the safety questions turned up — or that nothing was recorded.
+
+        `record_concern` has no caller anywhere in production: Cura asks "do you
+        have grab bars in your bathroom?", she answers, and handle_speech falls
+        through to "Thank you for sharing that with me." The answer is never
+        routed here, so `_concerns` is always empty and this always reported
+        "no concerns identified".
+
+        A caregiver reading that would conclude the bathroom was checked and
+        found safe. Nothing was checked. An assessment that cannot report a
+        concern is indistinguishable from one that found none, and the fix for
+        the missing plumbing is a conversational-state change, not a rename --
+        so until it exists, say plainly that nothing was recorded.
+        """
+        if not self._concerns and not self._asked_indices:
+            return "No home safety questions have been asked yet."
         if not self._concerns:
-            return "Home safety assessment complete — no concerns identified."
+            asked = len(self._asked_indices)
+            return (f"{asked} home safety question{'s' if asked != 1 else ''} "
+                    f"asked. No answers were recorded — Cura cannot yet route "
+                    f"what she says back into this assessment, so this is not "
+                    f"a clean bill of health.")
         return (
             f"Home safety assessment found {len(self._concerns)} concern(s): "
             + "; ".join(f"{cat}: {desc}" for cat, desc in self._concerns)

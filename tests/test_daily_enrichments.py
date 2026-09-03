@@ -217,10 +217,33 @@ class TestHomeSafetyAssessment:
         assert "1 concern" in summary
         assert "fall_prevention" in summary
 
-    def test_clean_summary(self):
+    def test_an_assessment_that_has_done_nothing_does_not_report_clean(self):
+        """This test previously asserted that a FRESH assessment — nothing
+        asked, nothing answered — reports "no concerns identified". It pinned
+        the lie as the specification.
+
+        record_concern has no caller in production: Cura asks about grab bars,
+        she answers, handle_speech falls through to "Thank you for sharing that
+        with me", and the answer is discarded. So _concerns was always empty and
+        the summary always read clean. A caregiver would conclude the bathroom
+        had been checked and found safe."""
+        summary = HomeSafetyAssessment().get_summary()
+        assert "no concerns" not in summary.lower()
+        assert "not been asked" in summary.lower() or "have been asked yet" in summary.lower()
+
+    def test_asked_but_unanswered_is_not_a_clean_bill_of_health(self):
         assessment = HomeSafetyAssessment()
+        assessment.get_next_question()
         summary = assessment.get_summary()
-        assert "no concerns" in summary.lower()
+        assert "no concerns identified" not in summary.lower()
+        assert "not a clean bill of health" in summary.lower()
+
+    def test_a_recorded_concern_is_still_reported(self):
+        assessment = HomeSafetyAssessment()
+        assessment.get_next_question()
+        assessment.record_concern(0, "no grab bars in the shower")
+        summary = assessment.get_summary()
+        assert "grab bars" in summary and "1 concern" in summary
 
 
 class TestSocialMatchmaker:
