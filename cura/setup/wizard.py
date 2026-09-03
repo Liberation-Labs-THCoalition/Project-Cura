@@ -217,10 +217,39 @@ def write_config(out: Path, cfg: dict) -> None:
     """
     existing = {}
     if out.exists():
+        raw = ""
         try:
-            existing = json.loads(out.read_text())
-        except (OSError, ValueError):
-            existing = {}
+            raw = out.read_text()
+            existing = json.loads(raw)
+        except OSError as e:
+            raise RuntimeError(
+                f"cannot read {out} to merge into it: {e}") from e
+        except ValueError as e:
+            # A config we cannot PARSE is not an empty config. Treating it as
+            # one made the merge discard everything -- including the Twilio auth
+            # token -- which is the exact loss this function exists to prevent,
+            # reachable through a file that is merely corrupt. Silent, too: no
+            # error, no backup, the credentials simply gone.
+            #
+            # Found by a question from Nexus, who asked whether the merge
+            # preserves comments. It does not, because the format is strict
+            # JSON -- but a commented config is unparseable, and unparseable was
+            # being read as empty.
+            salvage = out.with_suffix(".unreadable")
+            try:
+                salvage.write_text(raw)
+                salvage.chmod(0o600)
+            except OSError:
+                salvage = None
+            raise RuntimeError(
+                f"{out} exists but is not valid JSON ({e}). Refusing to write "
+                f"over it, because merging into an unreadable file would delete "
+                f"whatever it holds — including phone credentials."
+                + (f" A copy is at {salvage}." if salvage else "")) from e
+    if not isinstance(existing, dict):
+        raise RuntimeError(
+            f"{out} holds {type(existing).__name__}, not an object; refusing to "
+            f"merge into it")
     merged = {**existing, **cfg}
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp")

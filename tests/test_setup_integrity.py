@@ -270,3 +270,61 @@ class TestMultipleHouseholdMembersAreExplained:
         out = self._explain(tmp_path, monkeypatch,
                             ["margaret.json", "ray.json", "setup-progress.json"])
         assert "setup-progress" not in out
+
+
+class TestAnUnreadableConfigIsNotAnEmptyOne:
+    """`existing = {}` on a ValueError made the merge discard everything —
+    including the Twilio auth token — which is the exact loss write_config
+    exists to prevent, reachable through a file that is merely corrupt. Silent:
+    no error, no backup, the credentials simply gone.
+
+    Found by a question from Nexus, who asked whether the merge preserves
+    comments before writing public_url into the config. It does not, because
+    the format is strict JSON — but a commented config is unparseable, and
+    unparseable was being read as empty. Their installer writes this file.
+    """
+
+    def _corrupt(self, tmp_path, text):
+        p = tmp_path / "margaret.json"
+        p.write_text(text)
+        return p
+
+    @pytest.mark.parametrize("text,label", [
+        ('{ // a note\n "name": "M", "twilio": {"auth_token": "secret"}}', "comments"),
+        ('{"name": "M", "twilio": {"auth_to', "truncated mid-write"),
+        ('', "empty file"),
+        ('not json at all', "garbage"),
+    ])
+    def test_it_refuses_rather_than_silently_wiping(self, tmp_path, text, label):
+        from cura.setup.wizard import write_config
+        p = self._corrupt(tmp_path, text)
+        before = p.read_text()
+        with pytest.raises(RuntimeError):
+            write_config(p, {"public_url": "https://x.example.org"})
+        assert p.read_text() == before, f"{label}: overwrote an unreadable config"
+
+    def test_the_unreadable_original_is_salvaged(self, tmp_path):
+        from cura.setup.wizard import write_config
+        p = self._corrupt(tmp_path, '{"twilio": {"auth_token": "secret"} ')
+        with pytest.raises(RuntimeError):
+            write_config(p, {"public_url": "https://x"})
+        salvage = tmp_path / "margaret.unreadable"
+        assert salvage.exists() and "secret" in salvage.read_text()
+
+    def test_a_json_array_is_refused_too(self, tmp_path):
+        """Valid JSON, wrong shape — {**existing} on a list raises TypeError
+        deep inside instead of saying what is wrong."""
+        from cura.setup.wizard import write_config
+        p = self._corrupt(tmp_path, '["not", "an", "object"]')
+        with pytest.raises(RuntimeError):
+            write_config(p, {"public_url": "https://x"})
+
+    def test_a_valid_config_still_merges_normally(self, tmp_path):
+        import json
+        from cura.setup.wizard import write_config
+        p = tmp_path / "margaret.json"
+        p.write_text(json.dumps({"name": "M", "twilio": {"auth_token": "secret"}}))
+        write_config(p, {"public_url": "https://x.example.org"})
+        after = json.loads(p.read_text())
+        assert after["twilio"]["auth_token"] == "secret"
+        assert after["public_url"] == "https://x.example.org"
