@@ -123,8 +123,17 @@ def _phone_ok(v):
 
 
 def _norm_phone(v):
-    d = re.sub(r"\D", "", v)
-    return "+" + ("1" + d if len(d) == 10 else d)
+    """One normaliser, shared with the terminal wizard. Import, don't copy.
+
+    This returned "+" for empty input -- the exact bug wizard.norm_phone
+    documents at length as fixed. I unified the two VALIDATORS and left the two
+    NORMALISERS divergent, in the same file, in the commit that claimed one
+    rule. And this is the path that matters most: the packaged double-clickable
+    app launches the window, so this is the code a man with failing eyesight
+    actually runs.
+    """
+    from cura.setup.wizard import norm_phone
+    return norm_phone(v)
 
 
 # One validator serves both wizards. The terminal wizard accepts a bare

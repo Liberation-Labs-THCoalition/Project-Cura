@@ -204,3 +204,24 @@ class TestEveryCommandWePrintIsReal:
         assert real, "could not read the real subcommand list"
         missing = promised - real
         assert not missing, f"we tell people to type commands that do not exist: {missing}"
+
+
+class TestTheTwoWizardsAgreeOnEverything:
+    """Not just the validator. I unified _phone_ok and left _norm_phone
+    divergent in the same file, so the window still turned a skipped question
+    into the emergency contact "+". The window is the path the packaged
+    double-clickable app launches — the one a man with failing eyesight gets."""
+
+    @pytest.mark.parametrize("value", [
+        "", "   ", "+", "555", "307-555-0134", "13075550134",
+        "0123456789", "(307) 555-0134", "23075550134",
+    ])
+    def test_both_normalisers_return_the_same_thing(self, value):
+        from cura.setup.gui import _norm_phone
+        assert _norm_phone(value) == norm_phone(value)
+
+    @pytest.mark.parametrize("value", ["", "   ", "+", "555"])
+    def test_neither_turns_a_skipped_question_into_a_phone_number(self, value):
+        from cura.setup.gui import _norm_phone
+        assert _norm_phone(value) == ""
+        assert norm_phone(value) == ""
