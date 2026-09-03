@@ -216,3 +216,53 @@ class TestMemoryStoreContainment:
         path = store.save(CompanionMemory(elder_name="Margaret Chen"))
         assert oct(path.stat().st_mode & 0o777) == "0o600"
         assert oct(root.stat().st_mode & 0o777) == "0o700"
+
+
+class TestRecentObservationsHonoursDays:
+    """`cutoff` was computed and never compared, so `days` did nothing and this
+    returned the last 20 observations of any age.
+
+    The caller that matters is conversation_context(days=3), which labels the
+    result "Recent conversations" — so a worry from four months ago could be
+    handed to Cura as something she said this week, and Cura would follow up on
+    it as current. EldercarePulseConfig.recent_checkins does this correctly four
+    lines from its own equivalent; the pattern was already in the codebase.
+    """
+
+    def _memory(self):
+        from datetime import datetime, timedelta, timezone
+        from cura.memory.companion_memory import CompanionMemory
+        m = CompanionMemory(elder_name="Margaret")
+        now = datetime.now(timezone.utc)
+        for days_ago, text in [(120, "worried about the stairs"),
+                               (30, "missed church"),
+                               (5, "slept badly"),
+                               (1, "good day in the garden")]:
+            m.add_observation(text, "concern")
+            m.observations[-1].timestamp = (now - timedelta(days=days_ago)).isoformat()
+        return m
+
+    def test_three_days_excludes_a_four_month_old_worry(self):
+        got = [o.content for o in self._memory().recent_observations(days=3)]
+        assert got == ["good day in the garden"]
+        assert "worried about the stairs" not in got
+
+    def test_seven_days_includes_only_the_last_week(self):
+        got = [o.content for o in self._memory().recent_observations(days=7)]
+        assert set(got) == {"good day in the garden", "slept badly"}
+
+    def test_a_wide_window_still_returns_everything(self):
+        assert len(self._memory().recent_observations(days=365)) == 4
+
+    def test_the_days_argument_actually_changes_the_result(self):
+        """The property the missing comparison broke: different windows must
+        give different answers, or the parameter is decorative."""
+        m = self._memory()
+        assert len(m.recent_observations(days=3)) < len(m.recent_observations(days=365))
+
+    def test_an_undated_observation_is_kept_not_silently_dropped(self):
+        m = self._memory()
+        m.add_observation("no timestamp recorded", "concern")
+        m.observations[-1].timestamp = ""
+        assert any(o.content == "no timestamp recorded"
+                   for o in m.recent_observations(days=3))

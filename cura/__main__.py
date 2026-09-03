@@ -88,8 +88,7 @@ def main() -> None:
     if args.command == "rehearse":
         cfg = args.config or _default_config_path()
         if not cfg:
-            print("\n  Cura isn't set up yet. Run this first:\n")
-            print("      cura setup\n")
+            _explain_no_config(command="rehearse")
             sys.exit(1)
         _preview(cfg)
         sys.exit(0)
@@ -118,9 +117,8 @@ def main() -> None:
         # assurance stops someone calling out.
         cfg_path = args.config or _default_config_path()
         if not cfg_path:
-            print("\n  Cura needs to know who to call for help before it can answer")
-            print("  the phone. Run this first:\n")
-            print("      cura setup\n")
+            _explain_no_config("Cura needs to know who to call for help before "
+                               "it can answer the phone.", command="webhook")
             sys.exit(1)
         responder = _build_responder(cfg_path)
         # create_app REFUSES to build without an auth token, by design -- an
@@ -250,9 +248,39 @@ def _default_config_path():
             return p
     except Exception:
         pass
-    found = sorted((_P.home() / ".cura").glob("*.json"))
-    found = [f for f in found if f.name != "setup-progress.json"]
+    found = _config_candidates()
     return str(found[0]) if len(found) == 1 else None
+
+
+def _explain_no_config(preamble: str = "", command: str = "run") -> None:
+    """Say which case this actually is, instead of always saying 'not set up'."""
+    found = _config_candidates()
+    if preamble:
+        print(f"\n  {preamble}")
+    if not found:
+        print("\n  Cura isn't set up yet. Run this first:\n")
+        print("      cura setup\n")
+        return
+    print(f"\n  There are {len(found)} people set up here, so Cura doesn't know")
+    print("  which one you mean. Say which:\n")
+    for f in found:
+        print(f"      cura {command} --config {f}")
+    print()
+
+
+def _config_candidates() -> list:
+    """Every config in ~/.cura, so a caller can say WHICH it found.
+
+    _default_config_path returns None for zero configs and for two, and every
+    caller prints "Cura isn't set up yet — run cura setup". For a household with
+    two people set up that message is simply false, and it sends someone who
+    already did the work back to do it again.
+    """
+    from pathlib import Path as _P
+    d = _P.home() / ".cura"
+    if not d.exists():
+        return []
+    return [f for f in sorted(d.glob("*.json")) if f.name != "setup-progress.json"]
 
 
 def _preview(config_path: str) -> None:

@@ -32,7 +32,7 @@ import os
 import unicodedata
 import logging
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -150,11 +150,28 @@ class CompanionMemory:
         ))
 
     def recent_observations(self, days: int = 7, category: str = "") -> list[Observation]:
-        cutoff = datetime.now(timezone.utc).isoformat()[:10]
+        """Observations from the last `days` days.
+
+        `cutoff` was computed and never compared, so `days` did nothing and this
+        returned the last 20 observations of any age. The caller that matters is
+        conversation_context(days=3), which labels the result "Recent
+        conversations" — so a worry from March could be handed to Cura as
+        something she said this week, and Cura would follow up on it as though
+        it were current.
+
+        EldercarePulseConfig.recent_checkins does this correctly four lines from
+        its own equivalent. The pattern was already in the codebase.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         recent = []
         for obs in reversed(self.observations):
             if category and obs.category != category:
                 continue
+            # An observation with no timestamp is of unknown age. Keep it and
+            # let it be seen rather than silently dropping it -- but it must not
+            # be the reason `days` appears to work.
+            if obs.timestamp and obs.timestamp < cutoff:
+                break        # observations are appended in order; older follow
             recent.append(obs)
             if len(recent) >= 20:
                 break

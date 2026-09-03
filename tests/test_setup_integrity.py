@@ -225,3 +225,48 @@ class TestTheTwoWizardsAgreeOnEverything:
         from cura.setup.gui import _norm_phone
         assert _norm_phone(value) == ""
         assert norm_phone(value) == ""
+
+
+class TestMultipleHouseholdMembersAreExplained:
+    """_default_config_path returns None for zero configs AND for two, and both
+    call sites printed "Cura isn't set up yet — run cura setup". For a household
+    that set up two people that is simply false, and it sends someone who
+    already did the work back to do it again. The household model makes two
+    configs normal, so this had to stop lying first."""
+
+    def _explain(self, tmp_path, monkeypatch, names, command="run"):
+        import io, contextlib
+        from pathlib import Path
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        d = tmp_path / ".cura"
+        d.mkdir(parents=True, exist_ok=True)
+        for n in names:
+            (d / n).write_text("{}")
+        from cura.__main__ import _explain_no_config
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            _explain_no_config(command=command)
+        return buf.getvalue()
+
+    def test_no_config_says_run_setup(self, tmp_path, monkeypatch):
+        out = self._explain(tmp_path, monkeypatch, [])
+        assert "isn't set up yet" in out and "cura setup" in out
+
+    def test_two_configs_names_both_instead_of_claiming_unconfigured(
+            self, tmp_path, monkeypatch):
+        out = self._explain(tmp_path, monkeypatch, ["margaret.json", "ray.json"])
+        assert "isn't set up yet" not in out, "told a set-up household to set up"
+        assert "margaret.json" in out and "ray.json" in out
+
+    def test_it_names_the_command_the_person_actually_typed(
+            self, tmp_path, monkeypatch):
+        out = self._explain(tmp_path, monkeypatch,
+                            ["margaret.json", "ray.json"], command="rehearse")
+        assert "cura rehearse --config" in out
+        assert "cura run --config" not in out
+
+    def test_setup_progress_is_not_offered_as_a_person(
+            self, tmp_path, monkeypatch):
+        out = self._explain(tmp_path, monkeypatch,
+                            ["margaret.json", "ray.json", "setup-progress.json"])
+        assert "setup-progress" not in out
