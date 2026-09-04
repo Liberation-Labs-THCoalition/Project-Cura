@@ -45,6 +45,7 @@ class ComposedCheckin:
     enrichments: list[Enrichment]
     wearable_observations: list[str]
     scam_addition: str | None
+    help_prompt: str = ""
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -67,7 +68,21 @@ class ComposedCheckin:
             parts.append(e.message)
         if self.scam_addition:
             parts.append(self.scam_addition)
+        if self.help_prompt:
+            # Last, so it is the thing she has most recently heard when the
+            # <Gather> opens. Every scheduled call carries it: the Gather, its
+            # action URL, the escalation callback and the six-rung ladder were
+            # all built while no call ever said a keypad existed, so none of it
+            # could fire.
+            parts.append(self.help_prompt)
         return parts
+
+
+
+def _help_line(days_heard: int, rotation: int) -> "HelpPrompt | None":
+    """The graduating press-two line. See cura/pulse/help_prompt.py."""
+    from cura.pulse.help_prompt import help_prompt
+    return help_prompt(days_heard, inbound=False, rotation=rotation)
 
 
 class CheckinComposer:
@@ -102,6 +117,8 @@ class CheckinComposer:
         pulse_config,
         weather: dict | None = None,
         yesterday_topic: str = "",
+        days_heard: int = 0,
+        rotation: int = 0,
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_morning_greeting()
         med_reminder = pulse_config.generate_medication_reminder("morning")
@@ -136,12 +153,15 @@ class CheckinComposer:
             enrichments=enrichments,
             wearable_observations=wearable_obs,
             scam_addition=scam,
+            help_prompt=(hp.text if (hp := _help_line(days_heard, rotation)) else ""),
         )
 
     def compose_evening(
         self,
         pulse_config,
         weather: dict | None = None,
+        days_heard: int = 0,
+        rotation: int = 0,
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_evening_summary()
 
@@ -173,6 +193,7 @@ class CheckinComposer:
             enrichments=enrichments,
             wearable_observations=wearable_obs,
             scam_addition=scam,
+            help_prompt=(hp.text if (hp := _help_line(days_heard, rotation)) else ""),
         )
 
     def _memory_touches(self, name: str) -> list[str]:
