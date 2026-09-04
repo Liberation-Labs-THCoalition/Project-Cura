@@ -6,6 +6,7 @@ indistinguishable from no dose, so UNKNOWN must never resolve to ALLOWED.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from itertools import permutations
 
 import pytest
 
@@ -149,6 +150,47 @@ class TestPRNGuard:
         s = prn_status(_p(self.OXY), NOW, doses=[NOW - timedelta(hours=5)])
         assert s.verdict is PRNVerdict.ALLOWED and s.safe_to_take is True
 
+    def test_interval_is_measured_from_the_latest_dose_not_the_earliest(self):
+        """Mutation ``last = doses[-1]`` -> ``last = doses[0]`` survived the
+        suite: every interval test used a single dose, or a log whose earliest
+        dose also cleared the interval. With doses five hours and one hour ago
+        and a four-hour minimum, the mutant measured from the five-hour-old
+        dose and answered ALLOWED — approving an oxycodone double dose one
+        hour after the last one, for a woman who cannot remember taking it.
+        The log is passed out of order on purpose: the guard must find the
+        latest dose wherever it sits in the list, and the wait it quotes must
+        be counted from that dose, not merely happen to say TOO_SOON.
+        """
+        latest = NOW - timedelta(hours=1)
+        s = prn_status(_p(self.OXY), NOW,
+                       doses=[latest, NOW - timedelta(hours=5)])
+        assert s.verdict is PRNVerdict.TOO_SOON
+        assert s.safe_to_take is False
+        assert s.next_allowed == latest + timedelta(hours=4)
+        assert s.doses_today == 2
+
+    def test_the_guard_is_indifferent_to_the_order_the_log_arrived_in(self):
+        """Mutation ``doses = sorted(doses or [])`` -> ``list(doses or [])``
+        survived the suite: every multi-dose fixture arrived already sorted
+        ascending, so the sort never did observable work. Without it the
+        guard measures the interval from whichever entry happens to sit last
+        IN THE LIST -- and a real dose log is not sorted: caregiver entries
+        merge with phone-logged ones, and a backdated correction lands at the
+        end. The mutant would have said ALLOWED sixty minutes after the real
+        latest oxycodone dose, to a household where nobody can catch it.
+
+        The property: verdict, quoted wait, and dose count depend only on
+        the SET of doses, never on the order they were written down.
+        """
+        latest = NOW - timedelta(hours=1)
+        log = [latest, NOW - timedelta(hours=5), NOW - timedelta(hours=9)]
+        for ordering in permutations(log):
+            s = prn_status(_p(self.OXY), NOW, doses=list(ordering))
+            assert s.verdict is PRNVerdict.TOO_SOON, list(ordering)
+            assert s.safe_to_take is False
+            assert s.next_allowed == latest + timedelta(hours=4)
+            assert s.doses_today == 3
+
     def test_daily_maximum_blocks_even_when_interval_has_passed(self):
         doses = [NOW - timedelta(hours=h) for h in (20, 14, 9, 5)]
         s = prn_status(_p(self.OXY), NOW, doses=doses)
@@ -188,6 +230,38 @@ class TestSpokenTimesCannotBeMisheard:
         assert "1:30 in the afternoon" in local
         assert "7:30 in the evening" in utc
         assert local != utc
+
+    @pytest.mark.parametrize("minutes_ago,tz,local_next,utc_next", [
+        # Dose 1:30pm MT: next allowed 5:30pm MT; UTC would say 11:30 at night.
+        (30, MT, "5:30 in the evening", "11:30 at night"),
+        # Dose noon MT: next allowed 4:00pm MT; UTC would say 10:00 at night.
+        (120, MT, "4:00 in the afternoon", "10:00 at night"),
+        # One zone further west: the property, not the Wyoming instance.
+        (30, timezone(timedelta(hours=-7)), "4:30 in the afternoon",
+         "11:30 at night"),
+    ])
+    def test_next_allowed_time_is_spoken_in_the_household_timezone(
+            self, minutes_ago, tz, local_next, utc_next):
+        """Mutation (2026-09): the second _spoken_time call site dropped tz --
+        ``so around {_spoken_time(nxt)}`` -- and the whole suite stayed green,
+        because the tests above pin only the LAST-dose time. The guard then
+        said "you had one at 1:30 in the afternoon... another would be
+        alright in about 3 hours and 30 minutes, so around 11:30 at night" --
+        the next-allowed time in UTC, six hours off for Wyoming, contradicting
+        the correct wait quoted in the same sentence. A man with failing
+        eyesight who lives by the spoken word either withholds his wife's pain
+        relief for hours or learns the guard cannot do arithmetic.
+
+        The property: EVERY clock time in a TOO_SOON reason is household-local.
+        So the next-allowed time must appear in local terms and its UTC
+        rendering must not appear at all, at several dose times and at more
+        than one offset, chosen so the two renderings always differ.
+        """
+        s = prn_status(_p(TestPRNGuard.OXY), NOW,
+                       doses=[NOW - timedelta(minutes=minutes_ago)], tz=tz)
+        assert s.verdict is PRNVerdict.TOO_SOON
+        assert local_next in s.reason
+        assert utc_next not in s.reason
 
 
 class TestCaregiverIsToldWhatCuraIsNotDoing:
@@ -264,3 +338,126 @@ class TestFindingsFromTheOvernightShakedown:
         """The interval branch must not capture as-needed drugs."""
         m = _p("every 4 hours as needed")
         assert m.schedule is Schedule.PRN and m.announceable is False
+
+
+class TestDayKnownTimeUnknownIsStillReported:
+    """Closes a mutation that survived the suite (eldercare_pulse.py:92).
+
+    MUTATION: unknown_timing_medications dropped its WEEKLY-without-slots
+    clause --
+
+        if parsed.schedule is Schedule.UNKNOWN or (
+                parsed.schedule is Schedule.WEEKLY and not parsed.slots):
+
+    became
+
+        if parsed.schedule is Schedule.UNKNOWN:
+
+    WHAT THE HOUSEHOLD WOULD HAVE EXPERIENCED: "Alendronate on Thursdays"
+    parses WEEKLY with a day but no time of day, so it is never announced at
+    any check-in -- which is correct, no slot is known -- but under the mutant
+    it ALSO vanished from the caregiver's not-handled list. He assumes Cura is
+    reminding her; the weekly bisphosphonate is silently missed every single
+    week. Silent omission is safe for dosing ONLY because this list exists; a
+    medication that is both unannounced and unlisted is the exact false
+    all-clear the list was built to prevent.
+
+    Property, not instance: EVERY phrasing that yields a known day with an
+    unknown time of day must appear in the list, precisely because the same
+    parse guarantees the medication will never be spoken. The suite already
+    covered the UNKNOWN inputs ('', 'weekly') and the slot-bearing weekly
+    ('Sunday morning', excluded) -- the day-without-time shape between them
+    was tested only through needs_clarification, a different function.
+    """
+
+    DAY_ONLY = [
+        {"name": "Alendronate", "time": "Thursdays"},
+        {"name": "Methotrexate", "time": "on Sundays"},
+        {"name": "B12", "time": "every Tuesday"},
+    ]
+
+    @pytest.mark.parametrize("med", DAY_ONLY, ids=lambda m: m["time"])
+    def test_weekly_day_without_time_is_listed_as_not_handled(self, med):
+        from cura.pulse.eldercare_pulse import unknown_timing_medications
+        parsed = parse_medication(med)
+        # Precondition: this really is the day-without-time shape the WEEKLY
+        # clause exists for -- WEEKLY, not UNKNOWN (the mutant keeps UNKNOWN).
+        assert parsed.schedule is Schedule.WEEKLY
+        assert not parsed.slots
+        # It is never announced: no slot on any day of the week...
+        week = [datetime(2026, 9, 7 + d, 8, 0) for d in range(7)]  # Mon..Sun
+        assert all(slots_for(parsed, day) == set() for day in week)
+        # ...so absence from the not-handled list is a false all-clear.
+        assert unknown_timing_medications([med]) == [med["name"]], (
+            f"{med['name']} ({med['time']!r}) is never announced, and the "
+            f"caregiver was never told Cura is not handling it")
+
+    def test_the_whole_cabinet_reports_every_unhandled_medication(self):
+        """The list must carry every unhandled medication at once: day-only
+        weeklies alongside the genuinely UNKNOWN, with handled drugs absent."""
+        from cura.pulse.eldercare_pulse import unknown_timing_medications
+        cabinet = [
+            {"name": "Lisinopril", "time": "8am"},                 # handled
+            {"name": "Alendronate", "time": "Thursdays"},          # day, no time
+            {"name": "Donepezil", "time": ""},                     # unknown
+            {"name": "Oxycodone", "time": "as needed for pain"},   # PRN guard
+            {"name": "Methotrexate", "time": "Sunday morning"},    # handled
+        ]
+        assert unknown_timing_medications(cabinet) == ["Alendronate", "Donepezil"]
+
+
+class TestNoonBelongsToTheEveningCheckIn:
+    """Closes a mutation that survived the suite (medication.py:280).
+
+    MUTATION: the hour-to-slot mapping
+
+        slots = {"morning" if h < 12 else "evening" for h in hours}
+
+    became
+
+        slots = {"morning" if h <= 12 else "evening" for h in hours}
+
+    WHAT THE HOUSEHOLD WOULD HAVE EXPERIENCED: a '12pm' medication was
+    announced at the 8am morning check-in instead of the evening one -- a
+    confident wrong-time prompt, four hours early, to a woman who will
+    believe it and may take it again when the pill organizer says noon.
+
+    WHY NOTHING CAUGHT IT: no test anywhere used a noon time. Every
+    parametrized clock hour was 7-10 am/pm or 18:00, so the 12 o'clock
+    boundary of the slot mapping was completely unpinned.
+
+    Property, not instance: the morning slot is the hours STRICTLY before
+    noon. Hour 12 ('12pm', however written) is the first hour of the
+    afternoon and belongs to the evening check-in; 11:59am is the last
+    minute of the morning. Midnight ('12am') resolves to hour 0 and stays
+    morning, pinning the other half of the 12-o'clock conversion.
+
+    NOTE for the next person: these timings deliberately write the meridiem
+    with no space ('12pm', not '12 pm'). With a space, \\bpm\\b matches
+    _EVENING_WORDS and the word path supplies the slot before the
+    hour-to-slot mapping ever runs -- a '12 pm' test would keep passing
+    under this very mutation, which is how a check stops being able to fail.
+    """
+
+    @pytest.mark.parametrize("timing,expected", [
+        ("12pm", {"evening"}),          # noon exactly: the mutated boundary
+        ("12:00pm", {"evening"}),
+        ("12:30pm", {"evening"}),       # lunchtime, as a label writes it
+        ("11am", {"morning"}),          # last whole hour of the morning
+        ("11:59am", {"morning"}),       # last minute of the morning
+        ("12am", {"morning"}),          # midnight -> hour 0 -> morning
+    ])
+    def test_noon_is_the_first_hour_of_the_evening_slot(self, timing, expected):
+        m = _p(timing)
+        assert m.schedule is Schedule.DAILY
+        assert m.slots == expected, (
+            f"{timing!r} parsed to slots {m.slots}; a noon medication in the "
+            f"morning slot is announced four hours early")
+
+    def test_a_noon_dose_is_not_folded_into_a_morning_dose(self):
+        """Two doses spanning noon must fill BOTH slots. Under the mutant,
+        '8am and 12pm' collapsed to {'morning'} -- the noon dose silently
+        joined the 8am announcement and the evening check-in never named it."""
+        m = _p("8am and 12pm")
+        assert m.schedule is Schedule.DAILY
+        assert m.slots == {"morning", "evening"}

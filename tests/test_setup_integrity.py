@@ -328,3 +328,321 @@ class TestAnUnreadableConfigIsNotAnEmptyOne:
         after = json.loads(p.read_text())
         assert after["twilio"]["auth_token"] == "secret"
         assert after["public_url"] == "https://x.example.org"
+
+
+class TestMeridiemMapping:
+    @pytest.mark.parametrize("text,hour24", (
+        [(f"{h}am", h) for h in range(1, 12)]          # 1am..11am -> 1..11
+        + [("12am", 0)]                                # midnight
+        + [(f"{h}pm", h + 12) for h in range(1, 12)]   # 1pm..11pm -> 13..23
+        + [("12pm", 12)]                               # noon
+        + [(str(h), h) for h in range(24)]             # bare 24h passes through
+    ))
+    def test_meridiem_lands_in_the_correct_half_of_the_day(self, text, hour24):
+        """Mutation survived: `if mer == "pm" and h != 12` became
+        `if mer == "am" and h != 12` in to_hour24 — a full meridiem swap.
+        Every prior assertion was `0 <= result <= 23`, and a swapped half of
+        the day still satisfies that, so the suite stayed green. Under the
+        mutation the morning check-in fired at 8pm, the evening check-in at
+        7am, and every medication announcement anchored to those hours flipped
+        with them: a woman with late-stage dementia called at exactly the
+        wrong ends of the day, and nobody calling in the morning at all.
+        This pins the whole clock face, not one instance: am is identity with
+        12am as 0, pm adds twelve with 12pm staying 12, and bare 24-hour
+        input maps to itself."""
+        assert to_hour24(text) == hour24
+
+
+class TestTheWizardGateIsExecutedNotInspected:
+    """run() must be EXECUTED to prove the readiness gate points the right way.
+
+    MUTATION THIS CLOSES: wizard.py:438 `if problems:` -> `if not problems:`
+    survived the whole suite. The only test of the gate
+    (test_the_wizard_gates_its_ready_message) inspects source text for
+    'readiness_problems' appearing before the 'All set' string — an inverted
+    conditional passes that inspection perfectly, because the check is still
+    present in the source; it just points the wrong way. No test ran run().
+
+    What the household would have experienced: a config in which NOBODY CAN BE
+    REACHED prints 'All set. Cura is ready.' — the flagship defect this suite
+    was built around, resurrected — while a genuinely ready config is told it
+    is not ready and sent back through setup, forever.
+
+    Both directions are asserted on a real end-to-end run(): the resume path
+    is pre-answered on disk through the wizard's own save(), so the real
+    config builder, the real norm_phone, and the real readiness_problems all
+    execute. No stub stands in for anything.
+    """
+
+    ANSWERS = {
+        "name": "Margaret Chen", "preferred_name": "Margaret",
+        "phone": "307-555-0134", "morning": "8am", "evening": "7pm",
+        "caregiver_name": "Ray", "caregiver_phone": "307-555-0199",
+        "meds": "", "address": "",
+    }
+
+    def _run_wizard(self, tmp_path, monkeypatch, capsys, answers):
+        import builtins
+        from cura.setup import wizard
+        monkeypatch.setattr(wizard, "STATE", tmp_path / "setup-progress.json")
+        monkeypatch.setattr(wizard, "OUT_DIR", tmp_path)
+        monkeypatch.setattr(
+            builtins, "input",
+            lambda *_a, **_k: pytest.fail(
+                "run() asked a question the pre-answered state should cover"))
+        wizard.save(dict(answers))   # every question already answered: resume
+        wizard.run()
+        return capsys.readouterr().out, wizard.load()
+
+    def test_a_genuinely_ready_config_is_told_it_is_ready(
+            self, tmp_path, monkeypatch, capsys):
+        out, state = self._run_wizard(
+            tmp_path, monkeypatch, capsys, self.ANSWERS)
+        assert "All set. Cura is ready." in out, \
+            "a ready household was refused its ready message"
+        assert "not ready" not in out, \
+            "a ready household was sent back through setup"
+        assert state.get("completed") is True
+
+    def test_a_config_where_nobody_can_be_reached_is_never_told_all_set(
+            self, tmp_path, monkeypatch, capsys):
+        # "+" is the exact value the historic skipped-question defect stored,
+        # and ask() returns stored answers without re-validating — so this
+        # reaches the config precisely the way an old state file would.
+        out, state = self._run_wizard(
+            tmp_path, monkeypatch, capsys,
+            {**self.ANSWERS, "caregiver_phone": "+"})
+        assert "All set. Cura is ready." not in out, \
+            "told a household in which nobody can be reached that Cura is ready"
+        assert "not ready yet" in out, \
+            "the household was never told what still stops Cura starting"
+        assert not state.get("completed"), \
+            "setup marked itself completed while nobody can be reached"
+
+
+class TestEscalationPointsAwayFromThePersonInCrisis:
+    """Every escalation destination run() assembles must be the CAREGIVER's
+    answer, and the elder's own number must appear in none of them.
+
+    MUTATION THIS CLOSES: wizard.py:418, in run()'s config assembly —
+    emergency_contacts built with `"phone": norm_phone(state["phone"])` (the
+    elder's own number) instead of `norm_phone(state["caregiver_phone"])`.
+    It survived the whole suite: no test executed run()'s config assembly,
+    and readiness_problems cannot object because the elder's number is a
+    perfectly dialable phone number. Setup says ready, readiness agrees.
+
+    What the household would have experienced: when Cura is worried about
+    her, it calls the woman with late-stage dementia herself to summon help
+    — she cannot answer a phone — and her husband is never called. The
+    escalation path points at the person in crisis.
+
+    The property, not the instance: the test does not merely pin one E.164
+    string. It asserts identity through the wizard's own normaliser — every
+    escalation phone equals norm_phone(caregiver's raw answer) — and asserts
+    the elder's number is absent from every destination, with a guard that
+    the two numbers are distinguishable at all. A swap in EITHER direction
+    (contacts from the elder, or the elder's line from the caregiver) fails.
+
+    Real objects only: the real ask()/save() resume path pre-answers state on
+    disk, then the real run() drives the real norm_phone, write_config and
+    readiness_problems. input() is booby-trapped, not stubbed.
+    """
+
+    ELDER_RAW = "307-555-0134"       # her line — she cannot answer it
+    CAREGIVER_RAW = "(307) 555-0199" # his — deliberately a different format,
+                                     # so only norm_phone identity can pass
+
+    ANSWERS = {
+        "name": "Margaret Chen", "preferred_name": "Margaret",
+        "phone": ELDER_RAW, "morning": "8am", "evening": "7pm",
+        "caregiver_name": "Ray", "caregiver_phone": CAREGIVER_RAW,
+        "meds": "", "address": "",
+    }
+
+    def _config_run_writes(self, tmp_path, monkeypatch):
+        import builtins
+        from cura.setup import wizard
+        monkeypatch.setattr(wizard, "STATE", tmp_path / "setup-progress.json")
+        monkeypatch.setattr(wizard, "OUT_DIR", tmp_path)
+        monkeypatch.setattr(
+            builtins, "input",
+            lambda *_a, **_k: pytest.fail(
+                "run() asked a question the pre-answered state should cover"))
+        wizard.save(dict(self.ANSWERS))  # every question answered: resume path
+        wizard.run()
+        return json.loads((tmp_path / "margaret.json").read_text())
+
+    def test_every_escalation_destination_is_the_caregiver_not_the_elder(
+            self, tmp_path, monkeypatch):
+        cfg = self._config_run_writes(tmp_path, monkeypatch)
+        caregiver = norm_phone(self.CAREGIVER_RAW)
+        elder = norm_phone(self.ELDER_RAW)
+        assert caregiver and elder and caregiver != elder, \
+            "test guard: the two numbers must be dialable and distinct, " \
+            "or a swap would be invisible"
+
+        destinations = list(cfg["emergency_contacts"]) + [cfg["primary_caregiver"]]
+        assert destinations, "no escalation destination was assembled at all"
+        for dest in destinations:
+            assert dest["phone"] == caregiver, \
+                f"escalation destination {dest.get('name', '?')!r} is " \
+                f"{dest['phone']!r}, not the caregiver's number — " \
+                f"help would be summoned from the wrong phone"
+            assert dest["phone"] != elder, \
+                "the escalation path points at the person in crisis"
+            assert dest["name"] == self.ANSWERS["caregiver_name"]
+
+        # Her own line is still hers — the swap must not exist in the other
+        # direction either.
+        assert cfg["phone"] == elder
+
+        # Why THIS test has to hold the line: the mutated config is fully
+        # dialable, so the readiness gate passes it either way. This assert
+        # documents that readiness_problems is not the guard here.
+        assert readiness_problems(cfg) == []
+
+
+class TestARerunAnswerBeatsTheStaleValueOnDisk:
+    """Mutation caught: write_config's merge was flipped from
+    {**existing, **cfg} to {**cfg, **existing}, reversing precedence so that
+    any key already on disk silently beat the freshly-given answer.
+
+    What the household would have experienced: he re-runs setup to correct a
+    wrong caregiver number; the wizard accepts it, checks readiness against
+    the NEW answers, and prints "All set. Cura is ready." — but the config on
+    disk keeps the old wrong number forever. The correction is silently
+    discarded, and the number Cura calls when something seems wrong is the
+    one he already knows is wrong.
+
+    Why nothing caught it: every earlier merge test used keys that were
+    disjoint between the two sides (twilio vs phone/public_url) or identical
+    on both (name: Margaret), so precedence was never observable. This test
+    pins the property itself: on every overlapping key the new answer wins,
+    while keys setup did not author still survive.
+    """
+
+    def test_every_overlapping_key_takes_the_new_answer(self, tmp_path):
+        out = tmp_path / "margaret.json"
+        stale = {
+            "name": "Margaret Chen",
+            "phone": "+13075550134",
+            "primary_caregiver": {"name": "Ray", "phone": "+13075550100"},
+            "emergency_contacts": [{"name": "Ray", "phone": "+13075550100",
+                                    "relation": "caregiver"}],
+            "morning_time": 8,
+            "twilio": {"account_sid": "AC1", "auth_token": "secret"},
+        }
+        out.write_text(json.dumps(stale))
+
+        corrected = {
+            "name": "Margaret Chen",
+            "phone": "+13075550134",
+            "primary_caregiver": {"name": "Ray", "phone": "+13075550199"},
+            "emergency_contacts": [{"name": "Ray", "phone": "+13075550199",
+                                    "relation": "caregiver"}],
+            "morning_time": 9,
+        }
+        write_config(out, corrected)
+
+        after = json.loads(out.read_text())
+        for key, value in corrected.items():
+            assert after[key] == value, (
+                f"{key}: the re-run's answer was silently discarded in "
+                f"favour of the stale value already on disk")
+        # Keys setup did not author must still survive the merge.
+        assert after["twilio"] == stale["twilio"], \
+            "the merge destroyed a block setup did not author"
+
+
+class TestAnAreaCodeCannotBeginWithZeroOrOne:
+    """Mutation caught: wizard.py:156 `or d[1] in "01":` -> `or d[1] in "0":`,
+    narrowing the NANP area-code guard so that area codes beginning with 0
+    were still refused but ones beginning with 1 slipped straight through.
+
+    What the household would have experienced: a mistyped number like
+    1-123-456-7890 is accepted, setup says "All set. Cura is ready", and
+    Twilio rejects the number at the moment an escalation call is placed —
+    the exact "failure moved to the moment help is needed" the guard's own
+    comment warns about. Downstream _dialable is no backstop: its lstrip("1")
+    eats the offending area-code digit before it can be seen.
+
+    Why nothing caught it: the bad-number lists covered an area code starting
+    with 0 ("0123456789") but never one starting with 1. This class pins the
+    PROPERTY — every digit that cannot begin a NANP area code is refused, in
+    every way a caregiver might write the number — not one instance of it.
+    """
+
+    @pytest.mark.parametrize("bad_first", list("01"))
+    @pytest.mark.parametrize("template", [
+        "{a}23-456-7890",        # bare ten digits
+        "1-{a}23-456-7890",      # with the country code typed out
+        "+1 ({a}23) 456-7890",   # E.164-ish, with punctuation
+    ])
+    def test_no_forbidden_area_code_survives_any_format(self, bad_first, template):
+        number = template.format(a=bad_first)
+        assert norm_phone(number) == "", (
+            f"{number!r} has an area code beginning with {bad_first}, which "
+            f"does not exist in the NANP; accepting it moves the failure to "
+            f"the moment an escalation call is placed")
+
+    @pytest.mark.parametrize("good_first", list("23456789"))
+    def test_every_legal_leading_digit_still_passes(self, good_first):
+        # The guard must refuse exactly 0 and 1 — over-refusing would lock a
+        # real caregiver number out of setup entirely.
+        assert norm_phone(f"{good_first}07-555-0134") == f"+1{good_first}075550134"
+
+
+class TestTheWindowGateCoversEveryoneCuraMustReach:
+    """The window's `required` flag is the ENTIRE readiness gate on the
+    packaged double-clickable path — the one a man with failing eyesight
+    actually uses. gui.finish() prints "Cura is ready." unconditionally; it
+    never calls readiness_problems. The executed gate test above covers only
+    wizard.run, so on the window path there is nothing behind the flag.
+
+    MUTATION THIS CLOSES: gui.py questions() — `required=True` dropped from
+    the caregiver_phone question. It survived the whole suite because no test
+    built questions(state) and asserted which answers the window refuses to
+    advance without.
+
+    What the household would have experienced: he presses Next past "The best
+    number to reach you?" — one blank screen among eight, easy to do when you
+    cannot see the box well — and the window still says "Cura is ready." The
+    config it writes holds emergency_contacts: [] and primary_caregiver: {},
+    so the first time Cura is worried about her there is nobody on Earth for
+    it to call. Every screen before that moment worked; nothing after it can.
+
+    The property, not the instance: every answer the escalation path depends
+    on must be forced by the window (readiness_problems refuses a config
+    without her name, her number, or a reachable caregiver — pinned by
+    TestReadyIsAClaimThatGetsChecked above), and each forced phone number
+    must also carry a real dialability check, because `required` alone waves
+    "banana" through to norm_phone, which turns it into "" — and the contact
+    list is empty again with the flag intact. Real objects throughout: the
+    question dicts asserted on here are the very ones go_next consults.
+    """
+
+    def _by_key(self):
+        from cura.setup.gui import questions
+        qs = questions({})
+        assert qs, "the window has no questions at all"
+        return {q["key"]: q for q in qs}
+
+    @pytest.mark.parametrize("key", ["name", "phone", "caregiver_phone"])
+    def test_an_answer_escalation_depends_on_cannot_be_skipped(self, key):
+        q = self._by_key()[key]
+        assert q.get("required"), (
+            f"{key!r} can be skipped in the window, and finish() checks "
+            f"nothing afterwards — a blank {key!r} still ends at "
+            f"'Cura is ready.' with nobody for Cura to call")
+
+    @pytest.mark.parametrize("key", ["phone", "caregiver_phone"])
+    def test_a_forced_number_must_also_be_dialable(self, key):
+        q = self._by_key()[key]
+        check = q.get("check")
+        assert check is not None, (
+            f"{key!r} has no validator: any non-empty answer satisfies the "
+            f"required gate, norm_phone turns it into '', and the window "
+            f"still says 'Cura is ready.'")
+        for bad in ("banana", "555", "+"):
+            assert check(bad), f"{bad!r} was accepted as a number Cura can dial"
+        assert check("307-555-0134") is None, "a real number was refused"

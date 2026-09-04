@@ -243,3 +243,69 @@ class TestNameIsNotDoubled:
         summary = config.generate_evening_summary()
         assert summary.count("Margaret") == 1, summary
         assert "Margaret. Margaret," not in summary
+
+
+class TestAdherenceCountsBothMedicationSlots:
+    """Guards the mutant `check_type in ("morning", "evening")` ->
+    `check_type == "morning"` in adherence_rate_7d (eldercare_pulse.py:185).
+
+    Under that mutation, evening check-ins vanish from the adherence
+    denominator while every confirmation still lands in the numerator. The
+    household consequence: evening doses go unconfirmed for a week, yet
+    adherence reads perfect, needs_elevated_monitoring never trips, and the
+    caregiver alert that exists precisely for a missed-medication pattern
+    never fires. Her bedtime dose is simply gone and nobody is told.
+
+    Nothing caught it because every check-in in every adherence test was
+    check_type='morning'; no evening check-in ever entered the rate, so
+    halving the denominator's scope was invisible. The property, not the
+    instance: BOTH medication slots are denominator events, so an
+    unconfirmed check-in in EITHER slot must drag the rate down equally.
+    """
+
+    @staticmethod
+    def _checkin(check_type: str, confirmed: bool) -> CheckInResult:
+        return CheckInResult(
+            timestamp=datetime.now(timezone.utc),
+            check_type=check_type,
+            reached=True,  # reached but dose unconfirmed: adherence signal
+            response="ok",  # only, never missed_checkins_this_week
+            medication_confirmed=confirmed,
+        )
+
+    def test_unconfirmed_evening_checkins_lower_adherence(self):
+        """One confirmed morning plus three unconfirmed evenings is 25%
+        adherence. A week of missed bedtime doses must not read as 100%."""
+        config = EldercarePulseConfig(_make_profile())
+        config.record_checkin(self._checkin("morning", True))
+        for _ in range(3):
+            config.record_checkin(self._checkin("evening", False))
+        assert config.adherence_rate_7d == 0.25, (
+            "evening check-ins fell out of the adherence denominator -- "
+            "missed bedtime doses are invisible to the rate")
+
+    def test_missed_evening_pattern_trips_elevated_monitoring(self):
+        """The alert this rate exists to drive: adherence below 0.5 caused
+        by missed EVENING doses alone must still elevate monitoring."""
+        config = EldercarePulseConfig(_make_profile())
+        config.record_checkin(self._checkin("morning", True))
+        for _ in range(3):
+            config.record_checkin(self._checkin("evening", False))
+        assert config.needs_elevated_monitoring, (
+            "a week of unconfirmed evening doses did not trip elevated "
+            "monitoring -- the missed-medication caregiver alert never fires")
+
+    def test_both_slots_weigh_equally(self):
+        """Symmetry: an unconfirmed morning and an unconfirmed evening must
+        cost the rate the same. Guards the mirror mutant (== 'evening') and
+        any rewrite that privileges one slot over the other."""
+        morning_missed = EldercarePulseConfig(_make_profile())
+        morning_missed.record_checkin(self._checkin("morning", False))
+        morning_missed.record_checkin(self._checkin("evening", True))
+
+        evening_missed = EldercarePulseConfig(_make_profile())
+        evening_missed.record_checkin(self._checkin("morning", True))
+        evening_missed.record_checkin(self._checkin("evening", False))
+
+        assert morning_missed.adherence_rate_7d == 0.5
+        assert evening_missed.adherence_rate_7d == 0.5
