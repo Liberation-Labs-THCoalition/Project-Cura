@@ -196,6 +196,34 @@ def _twilio_settings(config_path: str) -> tuple[dict, str]:
             os.environ.get("CURA_PUBLIC_URL", "") or data.get("public_url", ""))
 
 
+
+def _load_household(config_path: str):
+    """A Household from the config, or None if this config predates them.
+
+    The other half of the join. cura/household/ had zero production call sites
+    and the wizard has only just started writing the block, so BOTH sides
+    existed separately until now -- which is the defect the module was written
+    to prevent, committed in the module itself.
+
+    Returns None rather than raising for a legacy config: households that were
+    set up before this exist and must keep working.
+    """
+    import json as _json
+    try:
+        with open(config_path) as f:
+            data = _json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not data.get("household", {}).get("members"):
+        return None
+    from cura.household import Household
+    try:
+        return Household.from_dict(data)
+    except (KeyError, ValueError, TypeError):
+        logger.exception("config has a household block that will not load")
+        return None
+
+
 def _build_responder(config_path: str):
     """Construct a responder that can actually summon help, or exit.
 
@@ -234,6 +262,23 @@ def _build_responder(config_path: str):
                       auth_token=tw.get("auth_token", ""),
                       from_number=tw.get("phone_number", ""),
                       config_path=config_path)
+    household = _load_household(config_path)
+    if household is not None:
+        from cura.comms.escalation import build_ladder_escalation
+        subject = data.get("household", {}).get("subject") or next(
+            iter(household.members), "")
+        tw_cfg = data.get("twilio", {}) or {}
+        cb = build_ladder_escalation(
+            voice, household, subject,
+            physician=data.get("physician"),
+            monitoring_service=data.get("monitoring_service"),
+            dispatch_line=data.get("dispatch_line"))
+        if cb is None:
+            # blocking_problems() already logged why. Refuse, as before.
+            print("\n  Cura cannot answer the phone yet — there is nobody it")
+            print("  could call for help.\n")
+            sys.exit(1)
+        return CuraResponder(on_help_requested=cb)
     return CuraResponder(on_help_requested=build_escalation(voice, profile))
 
 

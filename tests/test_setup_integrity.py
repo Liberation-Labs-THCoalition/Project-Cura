@@ -378,7 +378,7 @@ class TestTheWizardGateIsExecutedNotInspected:
         "name": "Margaret Chen", "preferred_name": "Margaret",
         "phone": "307-555-0134", "morning": "8am", "evening": "7pm",
         "caregiver_name": "Ray", "caregiver_phone": "307-555-0199",
-        "meds": "", "address": "",
+        "can_answer": "yes", "meds": "", "address": "",
     }
 
     def _run_wizard(self, tmp_path, monkeypatch, capsys, answers):
@@ -456,7 +456,7 @@ class TestEscalationPointsAwayFromThePersonInCrisis:
         "name": "Margaret Chen", "preferred_name": "Margaret",
         "phone": ELDER_RAW, "morning": "8am", "evening": "7pm",
         "caregiver_name": "Ray", "caregiver_phone": CAREGIVER_RAW,
-        "meds": "", "address": "",
+        "can_answer": "yes", "meds": "", "address": "",
     }
 
     def _config_run_writes(self, tmp_path, monkeypatch):

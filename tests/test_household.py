@@ -573,3 +573,81 @@ class TestTheConstructionGuardPointsTheRightWay:
         assert hh.blocking_problems() == [], (
             "a valid first-household config was refused at the readiness "
             "gate")
+
+
+class TestTheWizardActuallyProducesAHousehold:
+    """cura/household/ had ZERO production call sites. Nothing constructed a
+    Household, and the wizard wrote no household block — so the model written to
+    fix unjoined halves was itself one, on both sides at once."""
+
+    ANSWERS = {
+        "name": "Margaret Chen", "preferred_name": "Margaret",
+        "phone": "307-555-0134", "morning": "8am", "evening": "7pm",
+        "caregiver_name": "Ray Chen", "caregiver_phone": "307-555-0199",
+        "meds": "Warfarin at bedtime", "address": "41 Cottonwood Rd",
+    }
+
+    def _config(self, tmp_path, monkeypatch, can_answer):
+        import builtins, json
+        from cura.setup import wizard
+        monkeypatch.setattr(wizard, "STATE", tmp_path / "setup-progress.json")
+        monkeypatch.setattr(wizard, "OUT_DIR", tmp_path)
+        monkeypatch.setattr(builtins, "input", lambda *a, **k: "")
+        wizard.save({**self.ANSWERS, "can_answer": can_answer})
+        wizard.run()
+        out = [f for f in tmp_path.glob("*.json")
+               if f.name != "setup-progress.json"][0]
+        return json.loads(out.read_text())
+
+    def test_setup_writes_a_household_block(self, tmp_path, monkeypatch):
+        cfg = self._config(tmp_path, monkeypatch, "yes")
+        assert cfg.get("household", {}).get("members"), \
+            "the wizard produced no household — nothing can build one"
+
+    def test_a_household_can_be_built_from_what_setup_wrote(
+            self, tmp_path, monkeypatch):
+        from cura.household import Household
+        h = Household.from_dict(self._config(tmp_path, monkeypatch, "yes"))
+        assert len(h.members) == 2
+
+    def test_when_she_cannot_answer_she_is_never_called(
+            self, tmp_path, monkeypatch):
+        """The first household's actual situation, and the whole reason the
+        model exists. Not a degraded mode — the arrangement."""
+        from cura.household import Household, Reach
+        h = Household.from_dict(self._config(tmp_path, monkeypatch, "no"))
+        elder = h.members["margaret"]
+        assert elder.reach is Reach.NEVER
+        assert elder.checkins == ()
+        assert all(m.member_id != "margaret" for m, _ in h.scheduled_calls())
+        assert h.profile_for("margaret").phone == ""
+
+    def test_when_she_cannot_answer_the_caregiver_gets_the_check_in(
+            self, tmp_path, monkeypatch):
+        from cura.household import Household
+        h = Household.from_dict(self._config(tmp_path, monkeypatch, "no"))
+        calls = h.scheduled_calls()
+        assert calls, "nobody is called at all"
+        who = {m.member_id for m, _ in calls}
+        assert who == {"ray_chen"}
+
+    def test_when_she_can_answer_she_keeps_her_check_ins(
+            self, tmp_path, monkeypatch):
+        from cura.household import Household, Reach
+        h = Household.from_dict(self._config(tmp_path, monkeypatch, "yes"))
+        assert h.members["margaret"].reach is Reach.SCHEDULED
+        assert {c.slot for c in h.members["margaret"].checkins} == \
+            {"morning", "evening"}
+
+    def test_either_way_the_household_can_run(self, tmp_path, monkeypatch):
+        from cura.household import Household
+        for answer in ("yes", "no"):
+            h = Household.from_dict(self._config(tmp_path, monkeypatch, answer))
+            assert h.blocking_problems() == [], \
+                f"can_answer={answer} produces a household Cura refuses to serve"
+
+    def test_roles_come_out_derived_not_stored(self, tmp_path, monkeypatch):
+        from cura.household import Household
+        h = Household.from_dict(self._config(tmp_path, monkeypatch, "no"))
+        assert h.roles("ray_chen") == {"caregiver"}
+        assert h.roles("margaret") == {"cared_for"}

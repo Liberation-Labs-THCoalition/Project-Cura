@@ -161,6 +161,23 @@ def norm_phone(v: str) -> str:
     return "+" + d
 
 
+
+def a_yes_no(v: str) -> str | None:
+    if _is_yes(v) is None:
+        return "Please answer yes or no."
+    return None
+
+
+def _is_yes(v: str) -> bool | None:
+    s = (v or "").strip().lower()
+    if s in ("y", "yes", "yeah", "yep", "she can", "he can", "they can", "sometimes"):
+        return True
+    if s in ("n", "no", "nope", "not really", "she can't", "he can't",
+             "she cannot", "he cannot", "not any more", "not anymore"):
+        return False
+    return None
+
+
 def an_hour(v: str) -> str | None:
     """Validate a check-in hour.
 
@@ -203,6 +220,58 @@ def to_hour24(v: str, default: int | None = None) -> int:
     raise ValueError(f"{v!r} is not a time of day Cura can use")
 
 
+
+
+
+def _household_block(state: dict, meds: list, cfg: dict) -> dict:
+    """Turn the answers into members, roles and permission to call.
+
+    The load-bearing answer is `can_answer`. If the person being cared for
+    cannot answer a phone -- which is the first household's actual situation --
+    they are recorded reach=never and get NO check-ins, and the caregiver gets
+    them instead. That is not a degraded mode; it is the arrangement.
+    """
+    # _safe_stem handles non-Latin names via a stable digest, so a member_id
+    # exists for every person rather than only the Latin-alphabet ones.
+    from cura.memory.companion_memory import _safe_stem as _slug
+
+    elder_id = _slug(state.get("preferred_name") or state.get("name", "elder"))
+    care_id = _slug(state.get("caregiver_name") or "caregiver")
+    if care_id == elder_id:
+        care_id = care_id + "-caregiver"
+
+    can_answer = _is_yes(state.get("can_answer", "")) is True
+    morning = cfg["morning_time"]
+    evening = cfg["evening_time"]
+
+    elder = {
+        "member_id": elder_id,
+        "name": state["name"],
+        "preferred_name": state.get("preferred_name", ""),
+        "phone": cfg["phone"],
+        "reach": "scheduled" if can_answer else "never",
+        "medications": meds,
+        "address": cfg.get("address", ""),
+        "checkins": ([{"slot": "morning", "about": [elder_id]},
+                      {"slot": "evening", "about": [elder_id]}]
+                     if can_answer else []),
+    }
+    caregiver = {
+        "member_id": care_id,
+        "name": state.get("caregiver_name", ""),
+        "preferred_name": state.get("caregiver_name", "").split(" ")[0],
+        "phone": norm_phone(state.get("caregiver_phone", "")),
+        "reach": "scheduled" if not can_answer else "on_request",
+        "cares_for": [elder_id],
+        "address": cfg.get("address", ""),
+        # When she cannot be called, HE gets the check-in, and it is about both
+        # of them -- he is being asked after as well as asked about her.
+        "checkins": ([{"slot": "evening", "about": [elder_id, care_id]}]
+                     if not can_answer else []),
+    }
+    return {"members": [elder, caregiver],
+            "subject": elder_id,
+            "morning_hour": morning, "evening_hour": evening}
 
 
 def write_config(out: Path, cfg: dict) -> None:
@@ -386,6 +455,14 @@ def run(again: bool = False) -> int:
         "Cura will call or text you if something seems wrong.",
         validate=a_phone)
 
+    ask(state, "can_answer",
+        f"Can {first} answer a phone and have a conversation?",
+        "It's completely fine if not — many of the people Cura looks after "
+        "can't, and Cura works differently for them. If the answer is no, "
+        "Cura won't ring their phone at all; it will call you instead and "
+        "keep track of things for you.",
+        validate=a_yes_no)
+
     ask(state, "meds",
         f"Does {first} take any regular medications?",
         "List them separated by commas, and say when each one is taken — "
@@ -425,6 +502,10 @@ def run(again: bool = False) -> int:
         "morning_time": to_hour24(state.get("morning", ""), default=8),
         "evening_time": to_hour24(state.get("evening", ""), default=20),
     }
+    # The household block. cura/household/ existed with ZERO production call
+    # sites -- nothing anywhere constructed a Household, so the model written to
+    # fix unjoined halves was itself one. This is the join.
+    cfg["household"] = _household_block(state, meds, cfg)
     if state.get("address"):
         cfg["address"] = state["address"]
 
