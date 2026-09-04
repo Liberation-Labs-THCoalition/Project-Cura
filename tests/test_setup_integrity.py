@@ -646,3 +646,67 @@ class TestTheWindowGateCoversEveryoneCuraMustReach:
         for bad in ("banana", "555", "+"):
             assert check(bad), f"{bad!r} was accepted as a number Cura can dial"
         assert check("307-555-0134") is None, "a real number was refused"
+
+
+class TestTheWindowAndTheTerminalProduceTheSameThing:
+    """The window never asked can_answer and wrote no household block, so a
+    config it produced could not build a Household — _load_household returned
+    None, escalation fell back to the old gate, and Cura REFUSED TO START for
+    exactly the household this was written for.
+
+    The live blocker was fixed on the terminal path only: the one Thomas's
+    father will never see, because packaging/cura_setup_app.py launches the
+    window. Third divergence between these two after the phone validator and
+    the phone normaliser, each from writing the same idea twice.
+    """
+
+    def test_the_window_asks_whether_she_can_answer_a_phone(self):
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent
+               / "cura/setup/gui.py").read_text()
+        assert "can_answer" in src, \
+            "the window never asks the question the household model turns on"
+
+    def test_both_paths_ask_it_with_the_same_words(self):
+        """Two wordings drift. It is one question."""
+        from pathlib import Path
+        repo = Path(__file__).resolve().parent.parent
+        phrase = "answer a phone and have a conversation"
+        for rel in ("cura/setup/wizard.py", "cura/setup/gui.py"):
+            assert phrase in (repo / rel).read_text(), f"{rel} lacks the question"
+
+    def test_the_window_writes_a_household_block(self):
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent
+               / "cura/setup/gui.py").read_text()
+        assert 'cfg["household"]' in src
+
+    def test_the_window_imports_the_builder_rather_than_copying_it(self):
+        """The divergence keeps happening because the same idea gets written
+        twice. Assert the import, so a copy fails this."""
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent
+               / "cura/setup/gui.py").read_text()
+        assert "from cura.setup.wizard import _household_block" in src
+        assert "def _household_block" not in src, \
+            "the window reimplemented the builder instead of importing it"
+
+    def test_both_yes_no_validators_agree(self):
+        from cura.setup.gui import _yes_no_ok
+        from cura.setup.wizard import a_yes_no
+        for v in ["yes", "no", "maybe", "", "nope", "she can", "not really"]:
+            assert _yes_no_ok(v) == a_yes_no(v), f"they disagree about {v!r}"
+
+    def test_a_window_config_can_start_cura(self):
+        """The end that matters: the household the window produces must run."""
+        from cura.household import Household
+        from cura.setup.wizard import _household_block
+        state = {"name": "Margaret Chen", "preferred_name": "Margaret",
+                 "phone": "307-555-0134", "caregiver_name": "Ray Chen",
+                 "caregiver_phone": "307-555-0199", "can_answer": "no"}
+        cfg = {"phone": "+13075550134", "morning_time": 8,
+               "evening_time": 20, "address": ""}
+        h = Household.from_dict({"household": _household_block(state, [], cfg)})
+        assert h.blocking_problems() == [], \
+            "a config from the window still refuses to start"
+        assert all(m.member_id != "margaret" for m, _ in h.scheduled_calls())

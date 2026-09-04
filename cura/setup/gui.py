@@ -122,6 +122,13 @@ def _phone_ok(v):
             "Any format is fine — 555-123-4567 works.")
 
 
+
+def _yes_no_ok(v):
+    """One yes/no rule, shared with the terminal wizard."""
+    from cura.setup.wizard import a_yes_no
+    return a_yes_no(v)
+
+
 def _norm_phone(v):
     """One normaliser, shared with the terminal wizard. Import, don't copy.
 
@@ -163,6 +170,17 @@ def questions(state):
              help="Cura will contact you if something seems wrong. "
                   "Without it there is nobody for Cura to call.",
              required=True, check=_phone_ok),
+        dict(key="can_answer",
+             q=f"Can {first} answer a phone and have a conversation?",
+             help="It's completely fine if not — many of the people Cura "
+                  "looks after can't, and Cura works differently for them. "
+                  "If the answer is no, Cura won't ring their phone at all; "
+                  "it will call you instead and keep track of things for you.",
+             # Free text with the wizard's own validator, because nothing in
+             # this window renders a `choices` field -- I assumed support that
+             # does not exist. Same check as the terminal path, so the two
+             # cannot disagree about what counts as a yes.
+             required=True, check=_yes_no_ok),
         dict(key="meds", q=f"Does {first} take any regular medications?",
              help="Separate them with commas, like: Lisinopril, Metformin. "
                   "Don't worry about doses. You can leave this empty."),
@@ -412,6 +430,15 @@ def run(again: bool = False) -> int:
             "morning_time": _to24(state.get("morning", "8am")),
             "evening_time": _to24(state.get("evening", "7pm")),
         }
+        # Share the wizard's builder. The window never asked can_answer and
+        # wrote no household block, so a config it produced could not build a
+        # Household at all -- _load_household returned None, escalation fell
+        # back to the old gate, and Cura REFUSED TO START for exactly the
+        # household this was written for. The live blocker was fixed on the
+        # terminal path only: the one Thomas's father will never see.
+        from cura.setup.wizard import _household_block
+        cfg["household"] = _household_block(state, cfg["medications"], cfg)
+
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         safe = re.sub(r"[^a-z0-9]+", "-", cfg["preferred_name"].lower()).strip("-") or "person"
         out = OUT_DIR / f"{safe}.json"
