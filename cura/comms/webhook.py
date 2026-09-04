@@ -230,10 +230,35 @@ def create_app(
 
     @app.route("/voice/status", methods=["POST"])
     def call_status():
-        """Twilio call status callback — logging only."""
+        """Twilio's final word on whether the call happened.
+
+        Both scheduled calls pointed their status_callback at the DTMF handlers
+        instead of here, so this route never fired -- and a `no-answer` was
+        posted to a route expecting a keypress. Nothing in the system learned
+        that a check-in had gone unanswered.
+
+        This matters more than a log line. `answered` on the CallResult is
+        Twilio's view AT CREATION; the terminal status is how you actually
+        learn a call rang out, was busy, or failed. A missed check-in is the
+        signal the adherence tracking and the escalation triggers are built on.
+        """
         status = request.form.get("CallStatus", "")
         duration = request.form.get("CallDuration", "0")
-        logger.info("Call status: %s, duration: %ss", status, duration)
+        sid = request.form.get("CallSid", "")
+        to = request.form.get("To", "")
+
+        UNREACHED = {"no-answer", "busy", "failed", "canceled"}
+        if status in UNREACHED:
+            logger.warning("CALL NOT ANSWERED: %s to %s (%s)", status, to, sid)
+            if _responder is not None:
+                cb = getattr(_responder, "on_call_unanswered", None)
+                if callable(cb):
+                    try:
+                        cb(to, status)
+                    except Exception:
+                        logger.exception("on_call_unanswered raised")
+        else:
+            logger.info("Call %s: %s, duration %ss", sid, status, duration)
         return "", 204
 
     return app

@@ -672,3 +672,38 @@ class TestCheckinsDialTheElder:
             f"evening check-in dialed {result.to_number!r}, not the elder's "
             f"own phone {profile.phone!r}")
         assert result.to_number not in self._contact_numbers(profile)
+
+
+class TestCallStatusReachesTheStatusRoute:
+    """Both scheduled calls pointed status_callback at the DTMF handlers, so
+    /voice/status never fired and a `no-answer` was posted to a route expecting
+    a keypress. Nothing in the system learned a check-in had gone unanswered —
+    which is the signal adherence tracking and escalation are built on."""
+
+    def test_both_senders_point_at_the_status_route(self):
+        import ast
+        from pathlib import Path
+        repo = Path(__file__).resolve().parent.parent
+        tree = ast.parse((repo / "cura/__main__.py").read_text())
+        for fn in ("do_morning", "do_evening"):
+            node = next(n for n in ast.walk(tree)
+                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and n.name == fn)
+            cbs = [k.value.value for c in ast.walk(node)
+                   if isinstance(c, ast.Call)
+                   for k in c.keywords
+                   if k.arg == "status_callback" and isinstance(k.value, ast.Constant)]
+            assert cbs, f"{fn} sets no status_callback"
+            for cb in cbs:
+                assert cb == "/voice/status", \
+                    f"{fn} posts call status to {cb!r}, which expects a keypress"
+
+    def test_the_status_route_is_not_the_response_route(self):
+        """They parse different payloads. Twilio posts CallStatus, not Digits."""
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent
+               / "cura/comms/webhook.py").read_text()
+        i = src.index('@app.route("/voice/status"')
+        block = src[i:i + 1600]
+        assert "CallStatus" in block
+        assert "no-answer" in block, "the route cannot tell unanswered from done"

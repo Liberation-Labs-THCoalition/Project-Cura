@@ -425,7 +425,11 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
             messages=checkin.all_messages,
             gather_response=True,
             gather_action="/voice/checkin-response",
-            status_callback="/voice/checkin-response",
+            # Twilio posts CallStatus here, not Digits. Pointing this at the
+            # DTMF handler meant /voice/status never fired and a no-answer
+            # was delivered to a route expecting a keypress -- so we never
+            # learned a check-in went unanswered.
+            status_callback="/voice/status",
         )
         _report_call("Morning", name, result)
 
@@ -436,7 +440,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
             messages=checkin.all_messages,
             gather_response=True,
             gather_action="/voice/evening-response",
-            status_callback="/voice/evening-response",
+            status_callback="/voice/status",
         )
         _report_call("Evening", name, result)
 
