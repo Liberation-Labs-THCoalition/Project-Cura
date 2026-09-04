@@ -134,6 +134,7 @@ class Household:
     actually show up -- not a care-team directory.
     """
     members: dict[str, Member] = field(default_factory=dict)
+    _outside: tuple = ()      # monitoring service / dispatch line names
 
     def __post_init__(self) -> None:
         for mid, m in self.members.items():
@@ -264,6 +265,16 @@ class Household:
             if m.reach is not Reach.NEVER and m.phone and not dialable(m.phone):
                 gaps.append(
                     f"{m.display_name}'s number is not one Cura can dial")
+        # No rung outside this household. The research on emergency services
+        # made this the sharpest gap we have: a licensed monitoring centre or
+        # the county's 24/7 non-emergency dispatch line is the only rung that
+        # does not depend on somebody in the house being able to answer, and
+        # every medical-alert company that exists routes through one.
+        if not self.outside_contacts():
+            gaps.append(
+                "there is no monitoring service or dispatch line on file, so "
+                "if nobody in the household answers, the ladder ends there")
+
         # The sole-caregiver single point of failure, said out loud.
         for mid, m in sorted(self.members.items()):
             if not self.is_caregiver(mid):
@@ -274,6 +285,14 @@ class Household:
                     f"if {m.display_name} is the one who needs help, there is "
                     f"nobody else for Cura to call")
         return gaps
+
+    def outside_contacts(self) -> list[str]:
+        """Rungs that do not depend on someone in this house answering.
+
+        Empty is the state the whole ladder exists to avoid and the one the
+        first household is in today.
+        """
+        return list(self._outside)
 
     # ---- the projection ------------------------------------------------
     def profile_for(self, member_id: str):

@@ -50,6 +50,7 @@ class Rung(str, Enum):
     CALL_OUTSIDE = "call_outside"
     CALL_PHYSICIAN = "call_physician"
     MONITORING_SERVICE = "monitoring_service"
+    DISPATCH_LINE = "dispatch_line"
 
 
 LADDER: tuple[Rung, ...] = (
@@ -59,6 +60,7 @@ LADDER: tuple[Rung, ...] = (
     Rung.CALL_OUTSIDE,
     Rung.CALL_PHYSICIAN,
     Rung.MONITORING_SERVICE,
+    Rung.DISPATCH_LINE,
 )
 
 
@@ -138,6 +140,37 @@ class EscalationTrail:
         return "; ".join(parts) + "."
 
 
+
+def dispatch_script(who: str, address: str, context: str) -> str:
+    """What to say to a dispatcher, in the order that gets an ambulance.
+
+    NENA 56-501.1: "Most agencies polled dispatch police/law enforcement
+    personnel to investigate silent, hang-up or abandoned 9-1-1 calls... in very
+    few instances was another service agency dispatched (i.e., EMS,
+    paramedics)," at MID-LEVEL PRIORITY.
+
+    So if the medical nature does not survive into the telecommunicator's
+    classification, the household gets a squad car at middling urgency instead
+    of an ambulance. For a man on the floor that is the wrong resource at the
+    wrong speed, and for a woman with late-stage dementia an unexpected police
+    arrival is its own harm.
+
+    Lead with the medical nature and the resource needed, give the address
+    early, and REPEAT it -- Wyoming routes wireless by tower location, has one
+    selective router for the whole state, and 47 CFR 9.11(b)(3) excuses the
+    carrier from delivering location to a PSAP that cannot process it. Assume
+    nothing arrives with the call.
+    """
+    addr = address.strip() or "an address I do not have on file"
+    return (
+        f"This is an automated call from a home medical monitoring system. "
+        f"This is a medical emergency and an ambulance is needed. "
+        f"The address is {addr}. I will repeat that: {addr}. "
+        f"{who} may be unable to answer the door or the phone. {context} "
+        f"Again, the address is {addr}."
+    )
+
+
 def climb(
     household,
     subject_id: str,
@@ -147,6 +180,8 @@ def climb(
     place_call: Callable[[str, str], bool],
     physician: dict | None = None,
     monitoring_service: dict | None = None,
+    dispatch_line: dict | None = None,
+    address: str = "",
     raised_by: str | None = None,
 ) -> EscalationTrail:
     """Work down the ladder until somebody is reached, or until it runs out.
@@ -232,13 +267,20 @@ def climb(
                 if trail.rungs[-1].succeeded:
                     return _finish(rest)
                 continue
-        elif rung is Rung.MONITORING_SERVICE:
+        elif rung in (Rung.MONITORING_SERVICE, Rung.DISPATCH_LINE):
+            cfg = (monitoring_service if rung is Rung.MONITORING_SERVICE
+                   else dispatch_line)
+            label = ("monitoring service" if rung is Rung.MONITORING_SERVICE
+                     else "the county's non-emergency dispatch line")
             targets = []
-            unavailable = "no monitoring service is configured"
-            if monitoring_service and monitoring_service.get("phone"):
+            unavailable = f"no {label} is configured"
+            if cfg and cfg.get("phone"):
+                # These rungs reach a DISPATCHER, not family. Different script:
+                # lead with the medical nature or an ambulance does not come.
+                spoken = dispatch_script(who, address, context)
                 trail.rungs.append(_dial_group(
-                    rung, [(monitoring_service.get("name", "the monitoring service"),
-                            monitoring_service["phone"])], message, place_call))
+                    rung, [(cfg.get("name", label), cfg["phone"])],
+                    spoken, place_call))
                 if trail.rungs[-1].succeeded:
                     return _finish(rest)
                 continue
