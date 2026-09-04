@@ -266,3 +266,64 @@ class TestRecentObservationsHonoursDays:
         m.observations[-1].timestamp = ""
         assert any(o.content == "no timestamp recorded"
                    for o in m.recent_observations(days=3))
+
+
+class TestTwoPeopleDoNotShareOneMemoryFile:
+    """"Jose Garcia" and "José García" both fold to jose_garcia, silently
+    merging two people's memories. Known and accepted while there was no stable
+    identifier; the household model supplies one, so it is no longer accepted.
+
+    Harmless in a one-elder household. Not harmless in a facility, where the
+    merge means one resident's concerns are attributed to another.
+    """
+
+    def _store(self, tmp_path):
+        from cura.memory.companion_memory import MemoryStore
+        return MemoryStore(data_dir=str(tmp_path / "m"))
+
+    def test_names_that_fold_together_stay_apart_under_ids(self, tmp_path):
+        from cura.memory.companion_memory import CompanionMemory
+        s = self._store(tmp_path)
+        a = CompanionMemory(elder_name="José García", member_id="jose-1")
+        b = CompanionMemory(elder_name="Jose Garcia", member_id="jose-2")
+        a.add_observation("worried about the stairs", "concern")
+        b.add_observation("enjoyed the garden", "joy")
+        s.save(a); s.save(b)
+        assert [o.content for o in s.load("José García", "jose-1").observations] \
+            == ["worried about the stairs"]
+        assert [o.content for o in s.load("Jose Garcia", "jose-2").observations] \
+            == ["enjoyed the garden"]
+
+    def test_they_are_separate_files(self, tmp_path):
+        from cura.memory.companion_memory import CompanionMemory
+        s = self._store(tmp_path)
+        s.save(CompanionMemory(elder_name="José García", member_id="jose-1"))
+        s.save(CompanionMemory(elder_name="Jose Garcia", member_id="jose-2"))
+        assert len(list((tmp_path / "m").iterdir())) == 2
+
+    def test_without_ids_the_old_collision_is_still_there(self, tmp_path):
+        """Stated rather than hidden: the fallback path still collides, and
+        that is why the id matters."""
+        from cura.memory.companion_memory import CompanionMemory
+        s = self._store(tmp_path)
+        s.save(CompanionMemory(elder_name="José García"))
+        s.save(CompanionMemory(elder_name="Jose Garcia"))
+        assert len(list((tmp_path / "m").iterdir())) == 1
+
+    def test_memory_written_before_ids_still_loads(self, tmp_path):
+        """An empty memory is not the same as a new person. Starting someone
+        over with a blank history because the key changed would lose everything
+        Cura knows about them."""
+        from cura.memory.companion_memory import CompanionMemory
+        s = self._store(tmp_path)
+        old = CompanionMemory(elder_name="Margaret Chen")
+        old.add_observation("slept badly", "health")
+        s.save(old)
+        back = s.load("Margaret Chen", "margaret-1")
+        assert [o.content for o in back.observations] == ["slept badly"]
+
+    def test_exists_finds_it_under_either_key(self, tmp_path):
+        from cura.memory.companion_memory import CompanionMemory
+        s = self._store(tmp_path)
+        s.save(CompanionMemory(elder_name="Margaret Chen"))
+        assert s.exists("Margaret Chen", "margaret-1")

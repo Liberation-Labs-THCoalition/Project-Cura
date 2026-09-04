@@ -89,6 +89,7 @@ class Continuity:
 class CompanionMemory:
     """Everything Cura remembers about one elder."""
     elder_name: str
+    member_id: str = ""      # household id; stable, and the correct key
     created: str = ""
     last_updated: str = ""
     observations: list[Observation] = field(default_factory=list)
@@ -310,6 +311,21 @@ class MemoryStore:
     def __init__(self, data_dir: str = "") -> None:
         self._dir = Path(data_dir) if data_dir else Path.home() / ".cura" / "memory"
 
+    def _key_for(self, memory) -> str:
+        """The filename key: member_id when there is one, else the name.
+
+        Two distinct people still collided to one file -- "Jose Garcia" and
+        "José García" both fold to jose_garcia, silently merging two people's
+        memories. Harmless in a one-elder household, not harmless in a facility.
+        member_id is assigned once at setup and disambiguated there, so it is
+        the identifier that can actually be unique.
+
+        Falls back to the name because memory written before household ids
+        exists and must keep loading.
+        """
+        mid = getattr(memory, "member_id", "") or ""
+        return mid.strip() or getattr(memory, "elder_name", "") or str(memory)
+
     def _path_for(self, elder_name: str) -> Path:
         """Resolve one elder's file, and verify it lands inside the store.
 
@@ -334,7 +350,7 @@ class MemoryStore:
 
     def save(self, memory: CompanionMemory) -> Path:
         self._dir.mkdir(parents=True, exist_ok=True)
-        path = self._path_for(memory.elder_name)
+        path = self._path_for(self._key_for(memory))
 
         data = asdict(memory)
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
@@ -342,17 +358,27 @@ class MemoryStore:
         logger.info("Memory saved: %s (%d observations)", path, len(memory.observations))
         return path
 
-    def load(self, elder_name: str) -> CompanionMemory:
-        path = self._path_for(elder_name)
+    def load(self, elder_name: str, member_id: str = "") -> CompanionMemory:
+        path = self._path_for(member_id.strip() or elder_name)
+        if member_id.strip() and not path.exists():
+            # Memory written before household ids is keyed by name. Read it
+            # rather than silently starting this person over with a blank
+            # history -- an empty memory is not the same as a new person.
+            legacy = self._path_for(elder_name)
+            if legacy.exists():
+                path = legacy
 
         if not path.exists():
             return CompanionMemory(
                 elder_name=elder_name,
+                member_id=member_id,
                 created=datetime.now(timezone.utc).isoformat(),
             )
 
         data = json.loads(path.read_text())
-        memory = CompanionMemory(elder_name=data.get("elder_name", elder_name))
+        memory = CompanionMemory(
+            elder_name=data.get("elder_name", elder_name),
+            member_id=data.get("member_id", member_id))
         memory.created = data.get("created", "")
         memory.last_updated = data.get("last_updated", "")
         memory.conversation_count = data.get("conversation_count", 0)
@@ -371,8 +397,10 @@ class MemoryStore:
 
         return memory
 
-    def exists(self, elder_name: str) -> bool:
+    def exists(self, elder_name: str, member_id: str = "") -> bool:
         try:
+            if member_id.strip() and self._path_for(member_id).exists():
+                return True
             return self._path_for(elder_name).exists()
         except ValueError:
             return False
