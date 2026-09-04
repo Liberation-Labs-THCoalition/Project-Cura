@@ -182,3 +182,59 @@ class TestExtraRungs:
         t = climb(_house(), "ray", "ctx", send_sms=sms, place_call=call)
         doc = next(r for r in t.rungs if r.rung is Rung.CALL_PHYSICIAN)
         assert doc.attempted is False and doc.failed == []
+
+
+class TestTheLadderIsActuallyWired:
+    """cura/comms/ladder.py was written, tested and committed with no caller.
+    That is the defect this codebase produces more than any other, and it was
+    about to happen in the module built to make sure somebody gets reached."""
+
+    class _Voice:
+        def __init__(self, answers=(), sms_ok=True):
+            self.answers, self.sms_ok = set(answers), sms_ok
+            self.calls, self.texts = [], []
+        async def send_sms(self, to_number, message):
+            self.texts.append(to_number)
+            return type("S", (), {"sent": self.sms_ok, "sid": "SM1"})()
+        async def call(self, to_number, messages=None, **kw):
+            self.calls.append(to_number)
+            return type("C", (), {"answered": to_number in self.answers})()
+
+    def test_build_ladder_escalation_climbs_and_reaches(self):
+        from cura.comms.escalation import build_ladder_escalation
+        v = self._Voice(answers=("+15305551234",))
+        cb = build_ladder_escalation(v, _house(thomas=THOMAS), "ray")
+        assert cb is not None
+        cb("Ray pressed 2")
+        assert "+15305551234" in v.calls
+        assert "+13075550134" not in v.calls + v.texts, "dialled a NEVER member"
+
+    def test_it_refuses_when_nobody_can_be_reached(self):
+        """None is a refusal, not a degraded mode."""
+        from cura.comms.escalation import build_ladder_escalation
+        empty = Household({"margaret": Member(
+            "margaret", "Margaret Chen", "Margaret", "+13075550134", Reach.NEVER)})
+        assert build_ladder_escalation(self._Voice(), empty, "margaret") is None
+
+    def test_an_unanswered_climb_does_not_report_success(self, caplog):
+        import logging
+        from cura.comms.escalation import build_ladder_escalation
+        v = self._Voice(answers=())      # texts deliver, nobody answers
+        cb = build_ladder_escalation(v, _house(thomas=THOMAS), "ray")
+        with caplog.at_level(logging.CRITICAL):
+            cb("no movement since 6am")
+        assert any("NOBODY WAS REACHED" in r.message for r in caplog.records), \
+            "an unanswered escalation did not log CRITICAL"
+
+    def test_the_outcome_is_always_awaited(self):
+        """The old escalation used loop.create_task and set results=None when a
+        loop was already running, so in that path it never learned whether
+        anyone was reached — the 'nobody answered' branch could not fire."""
+        import asyncio
+        from cura.comms.escalation import build_ladder_escalation
+        v = self._Voice(answers=("+15305551234",))
+        cb = build_ladder_escalation(v, _house(thomas=THOMAS), "ray")
+        async def inside_a_loop():
+            cb("from async context")
+        asyncio.run(inside_a_loop())
+        assert v.calls, "escalation placed no call from inside a running loop"

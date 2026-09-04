@@ -104,3 +104,82 @@ def build_escalation(voice, profile) -> Callable[[str], Any] | None:
                              context)
 
     return on_help_requested
+
+def build_ladder_escalation(voice, household, subject_id: str,
+                            physician: dict | None = None,
+                            monitoring_service: dict | None = None):
+    """An on_help_requested callback that climbs the full ladder.
+
+    The household-aware replacement for build_escalation. Same contract: returns
+    None when help cannot be summoned, and None is a REFUSAL that the caller
+    must not serve on.
+
+    Wired here rather than left for later on purpose. cura/comms/ladder.py was
+    written, tested and committed with no caller -- which is the defect this
+    codebase produces more than any other, and I was about to produce it again
+    in the module built to make sure somebody gets reached.
+    """
+    import asyncio
+
+    problems = household.blocking_problems()
+    if problems:
+        for p in problems:
+            logger.error("ESCALATION UNAVAILABLE: %s", p)
+        return None
+
+    def _sync(coro):
+        """Run a coroutine and return its result, from sync or async context.
+
+        The old escalation did `loop.create_task(coro)` and set results=None
+        when a loop was already running, so in that path it NEVER LEARNED
+        whether anyone was reached -- the check for "nobody answered" could not
+        fire. Here the outcome is the whole point, so it is always awaited.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(asyncio.run, coro).result()
+
+    def send_sms(number: str, message: str) -> bool:
+        try:
+            r = _sync(voice.send_sms(number, message))
+        except Exception:
+            logger.exception("SMS to %s failed", number)
+            return False
+        return bool(getattr(r, "sent", False) or getattr(r, "sid", ""))
+
+    def place_call(number: str, message: str) -> bool:
+        try:
+            r = _sync(voice.call(to_number=number, messages=[message]))
+        except Exception:
+            logger.exception("call to %s failed", number)
+            return False
+        return bool(getattr(r, "answered", False))
+
+    def on_help_requested(context: str) -> None:
+        from cura.comms.ladder import climb
+        logger.warning("ESCALATION FIRING: %s", context)
+        try:
+            trail = climb(household, subject_id, context,
+                          send_sms=send_sms, place_call=place_call,
+                          physician=physician,
+                          monitoring_service=monitoring_service)
+        except Exception:
+            logger.exception(
+                "ESCALATION RAISED for %r — treat as nobody reached", context)
+            return
+        if trail.reached_anyone:
+            logger.warning("ESCALATION: %s", trail.summary())
+        else:
+            logger.critical("ESCALATION: %s", trail.summary())
+        for r in trail.rungs:
+            logger.info("  rung %-20s %s", r.rung.value,
+                        "reached " + ", ".join(r.reached) if r.succeeded
+                        else ("texted " + ", ".join(r.reached) if r.is_broadcast and r.reached
+                              else ("no answer from " + ", ".join(r.failed) if r.failed
+                                    else "not available: " + r.unavailable_because)))
+
+    return on_help_requested
