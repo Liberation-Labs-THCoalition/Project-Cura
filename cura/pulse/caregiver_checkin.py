@@ -33,6 +33,7 @@ def compose_caregiver_checkin(household, caregiver_id: str, *,
                               rotation: int = 0,
                               medication_questions: list[tuple] | None = None,
                               open_gaps: list[str] | None = None,
+                              prn_to_ask: list[str] | None = None,
                               ) -> CaregiverCheckin:
     """A call TO the caregiver, ABOUT the caregiver.
 
@@ -68,6 +69,18 @@ def compose_caregiver_checkin(household, caregiver_id: str, *,
         lines.append(
             f"One thing when you have a moment — about {subject}'s {name}. "
             f"{reason} Tell me any time and I'll pick it up.")
+
+    # The dose question. Thomas's framing: "do you remember how many times you
+    # gave her the pain med?" is not a logging chore, it is an ordinary thing a
+    # friend asks inside a conversation worth having anyway. The record is a
+    # by-product.
+    #
+    # Asks WHEN rather than HOW MANY, because prn_status answers "may I take
+    # another" from time since the last dose. "Twice today" cannot answer it.
+    for med in (prn_to_ask or []):
+        lines.append(
+            f"And when did {subject} last have the {med}? Roughly is fine — "
+            f"if you'd rather not guess, just say so.")
 
     for gap in (open_gaps or []):
         lines.append(f"Something you should know: {gap}.")
