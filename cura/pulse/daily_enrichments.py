@@ -248,11 +248,39 @@ class CaregiverBurnoutCheck:
         "has a helpline: 1-855-227-3640. You don't have to do this alone."
     )
 
-    def get_checkin_message(self, caregiver_name: str, elder_name: str) -> str:
-        msg = random.choice(self.MESSAGES)
+    def get_checkin_message(self, caregiver_name: str, elder_name: str,
+                            rotation: int | None = None) -> str:
+        """One of the messages, chosen by rotation rather than randomness.
+
+        random.choice means `cura rehearse` cannot show what he will actually
+        hear, which is why rehearsal was not a rehearsal. Pass a stable number
+        (week of year, check-in count). `None` keeps the old behaviour for any
+        caller that has not been updated.
+        """
+        msg = (self.MESSAGES[rotation % len(self.MESSAGES)]
+               if rotation is not None else random.choice(self.MESSAGES))
         return msg.format(name=caregiver_name, elder=elder_name)
 
     def get_resource_offer(self) -> str:
+        """The helpline.
+
+        UNVERIFIED. This number was written into the source and never checked
+        against the organisation. Speaking a wrong number to an exhausted
+        caregiver at 2am is a specific harm -- it costs them the one call they
+        worked up to making. `resource_is_verified` gates it, and it is False
+        until somebody dials it.
+        """
+        return self.RESOURCES
+
+    #: Set True only when a human has dialled the number in RESOURCES and
+    #: confirmed it reaches the Caregiver Action Network.
+    resource_is_verified: bool = False
+
+    def spoken_resource(self) -> str:
+        """What Cura may actually say. Empty until the number is verified."""
+        if not self.resource_is_verified:
+            return ("If you're feeling overwhelmed, please reach out to "
+                    "someone. You don't have to do this alone.")
         return self.RESOURCES
 
 
