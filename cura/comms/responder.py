@@ -47,7 +47,40 @@ class CuraResponder:
         self._on_scam = on_scam_report
         self._on_speech = on_speech
         self._response_log: list[dict[str, Any]] = []
+        self._pending = None      # cura.comms.pending.PendingQuestion | None
 
+
+    def expect_answer(self, topic: str, handler=None, **payload) -> None:
+        """Record that Cura just asked something, so the reply has a home.
+
+        Nothing survived from the moment Cura asked to the moment she replied,
+        so an answer arrived with no idea what it answered -- which is why
+        record_concern has never been called and the home-safety assessment
+        reported "no concerns identified" every time.
+        """
+        from datetime import datetime, timezone
+        from cura.comms.pending import PendingQuestion, save_pending
+        now = datetime.now(timezone.utc)
+        self._pending = PendingQuestion(
+            topic=topic, asked_at=now, handler=handler, payload=dict(payload))
+        # Persist: the process that ASKS is `cura run`, the process that hears
+        # the answer is `cura webhook`. In-memory only would have made this
+        # another correct half with nothing joined to it.
+        try:
+            save_pending(topic, now, dict(payload))
+        except OSError:
+            logger.warning("could not persist the pending question (%s)", topic)
+
+    def _take_pending(self):
+        """The live question, if there is one and it has not expired."""
+        from cura.comms.pending import load_pending
+        p, self._pending = self._pending, None
+        if p is None:
+            # Asked by the other process. Read it from disk instead.
+            p = load_pending()
+        if p is None or p.expired():
+            return None
+        return p
 
     def _promise_help(self, context: str, when_reachable: str) -> str:
         """Return what Cura may truthfully say about getting help.
@@ -173,6 +206,30 @@ class CuraResponder:
                        "I'm going to let your family know so they can help look into it. "
                        "Remember, it's never wrong to check with someone you trust.",
             }
+
+        # ONLY after help and scam have declined. A pending question must never
+        # swallow an emergency: if Cura asked about grab bars and she says "I've
+        # fallen and I can't get up", that is not an answer about grab bars.
+        pending = self._take_pending()
+        if pending is not None:
+            from cura.comms.pending import interpret_yes_no
+            answer = interpret_yes_no(transcript)
+            if pending.handler is not None:
+                try:
+                    pending.handler(answer, transcript)
+                except Exception:
+                    logger.exception("pending-question handler raised (%s)",
+                                     pending.topic)
+            if answer is None:
+                # Not coerced. "I don't know" is not a no, and recording it as
+                # one puts a false fact in a safety record.
+                return {"action": f"{pending.topic}_unclear",
+                        "say": "That's alright — I'll ask again another time."}
+            return {"action": f"{pending.topic}_answered",
+                    "say": ("Thank you, that's good to know."
+                            if answer else
+                            "Thank you for telling me. I'll make a note of "
+                            "that for your family.")}
 
         return {
             "action": "conversation",
