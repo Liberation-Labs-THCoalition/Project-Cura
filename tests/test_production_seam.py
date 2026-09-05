@@ -188,3 +188,85 @@ class TestThingsBuiltYesterdayActuallyRun:
         _build_responder(str(_wizard_config(tmp_path, dispatch=True)))
         out = capsys.readouterr().out
         assert "no monitoring service or dispatch line on file" not in out
+
+
+class TestTheGraduationActuallyGraduates:
+    """help_prompt graduates the press-two line through three registers over a
+    fortnight — twelve distinct lines. No production caller passed days_heard,
+    so it was permanently 0 and she heard the same first sentence forever.
+
+    Built, tested, wired into both composers, and never reached: the argument
+    had no source."""
+
+    def test_days_heard_has_a_source(self, tmp_path):
+        import json
+        from datetime import date, timedelta
+        from cura.__main__ import _days_heard
+        p = tmp_path / "c.json"
+        p.write_text(json.dumps({
+            "started_on": (date.today() - timedelta(days=20)).isoformat()}))
+        assert _days_heard(str(p)) == 20
+
+    def test_a_missing_start_date_is_earnest_not_a_crash(self, tmp_path):
+        """Earnest is the right register when we do not know."""
+        import json
+        p = tmp_path / "c.json"
+        p.write_text(json.dumps({}))
+        assert _days_heard_of(p) == 0
+        p.write_text("not json")
+        assert _days_heard_of(p) == 0
+
+    def test_the_wizard_records_it(self, tmp_path, monkeypatch):
+        """Drives the REAL wizard, not the test helper.
+
+        The first version asserted against _wizard_config(), which mimics the
+        wizard and had drifted from it — it would have passed or failed for
+        reasons about the helper rather than about setup. A fixture that
+        imitates the thing it tests is its own small instance of this."""
+        import builtins, json
+        from cura.setup import wizard
+        monkeypatch.setattr(wizard, "STATE", tmp_path / "setup-progress.json")
+        monkeypatch.setattr(wizard, "OUT_DIR", tmp_path)
+        monkeypatch.setattr(builtins, "input", lambda *a, **k: "")
+        wizard.save({"name": "Margaret Chen", "preferred_name": "Margaret",
+                     "phone": "307-555-0134", "morning": "8am", "evening": "7pm",
+                     "caregiver_name": "Ray Chen",
+                     "caregiver_phone": "307-555-0199",
+                     "can_answer": "no", "meds": "", "address": ""})
+        wizard.run()
+        out = [f for f in tmp_path.glob("*.json")
+               if f.name != "setup-progress.json"][0]
+        assert json.loads(out.read_text()).get("started_on"), \
+            "setup records no start date, so days_heard has no source"
+
+    def test_every_sender_passes_it(self):
+        """The actual defect: the composers accepted it and nobody supplied it."""
+        import ast
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent
+               / "cura/__main__.py").read_text()
+        calls = [c for c in ast.walk(ast.parse(src))
+                 if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                 and c.func.attr in ("compose_morning", "compose_evening")]
+        assert calls, "no composer calls found"
+        for c in calls:
+            kw = {k.arg for k in c.keywords}
+            assert "days_heard" in kw, \
+                "a check-in is composed without days_heard — she hears the " \
+                "first earnest line forever"
+
+    def test_the_line_actually_changes_over_time(self):
+        """The property, not the plumbing: different days, different words."""
+        from cura.pulse.checkin_composer import CheckinComposer
+        from cura.pulse.eldercare_pulse import ElderProfile, EldercarePulseConfig
+        cfg = EldercarePulseConfig(profile=ElderProfile(
+            name="Margaret Chen", preferred_name="Margaret"))
+        c = CheckinComposer()
+        lines = {c.compose_evening(cfg, days_heard=d, rotation=d)
+                 .all_messages[-1] for d in range(30)}
+        assert len(lines) > 3, f"only {len(lines)} distinct closing lines in 30 days"
+
+
+def _days_heard_of(p):
+    from cura.__main__ import _days_heard
+    return _days_heard(str(p))

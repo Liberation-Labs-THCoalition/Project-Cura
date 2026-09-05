@@ -505,6 +505,12 @@ def run(again: bool = False) -> int:
     # The household block. cura/household/ existed with ZERO production call
     # sites -- nothing anywhere constructed a Household, so the model written to
     # fix unjoined halves was itself one. This is the join.
+    # The day Cura started calling. help_prompt graduates the press-two line
+    # from earnest to familiar to playful over a fortnight, and without this
+    # there is no source for days_heard -- so every caller passed 0 and she
+    # heard the same first sentence forever.
+    from datetime import date as _date
+    cfg.setdefault("started_on", _date.today().isoformat())
     cfg["household"] = _household_block(state, meds, cfg)
     if state.get("address"):
         cfg["address"] = state["address"]

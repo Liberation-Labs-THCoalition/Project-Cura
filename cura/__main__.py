@@ -188,6 +188,28 @@ def _weather(config_path: str) -> dict | None:
 
 
 
+
+def _days_heard(config_path: str) -> int:
+    """How long she has been hearing the press-two line.
+
+    No production caller passed days_heard, so it was permanently 0 and only
+    the first earnest variant could ever be spoken -- the graduation was built,
+    tested, wired into both composers, and never reached. Missing or unreadable
+    means 0, which is the safe direction: earnest is the right register when we
+    do not know.
+    """
+    import json as _json
+    from datetime import date
+    try:
+        with open(config_path) as f:
+            started = _json.load(f).get("started_on")
+        if not started:
+            return 0
+        return max(0, (date.today() - date.fromisoformat(started)).days)
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
 def _remember_question(checkin) -> None:
     """If the call asked something, record it so the answer has somewhere to go.
 
@@ -424,11 +446,18 @@ def _preview(config_path: str) -> None:
     # first pass, so `cura rehearse` would have shown a check-in without
     # the line the real call says.
     for msg in composer.compose_morning(
-            cfg, weather=_weather(config_path)).all_messages:
+            cfg, weather=_weather(config_path),
+            days_heard=_days_heard(config_path),
+            rotation=_days_heard(config_path)).all_messages:
         print(f"      Cura:  {msg}")
     print()
     try:
-        evening = composer.compose_evening(cfg).all_messages
+        # Third call site missed by a search-and-replace because the
+        # variable is named differently. Rehearsal must show what will
+        # actually be heard, graduation included.
+        evening = composer.compose_evening(
+            cfg, days_heard=_days_heard(config_path),
+            rotation=_days_heard(config_path)).all_messages
     except Exception:
         evening = []
     if evening:
@@ -524,7 +553,9 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
         print()
         print("For now, here's what a morning check-in would say:")
         print()
-        checkin = composer.compose_morning(pulse_config, weather=_weather(config_path))
+        checkin = composer.compose_morning(pulse_config, weather=_weather(config_path),
+                                  days_heard=_days_heard(config_path),
+                                  rotation=_days_heard(config_path))
         for msg in checkin.all_messages:
             print(f"  Cura: {msg}")
         sys.exit(0)
@@ -532,7 +563,9 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
     import asyncio
 
     async def do_morning():
-        checkin = composer.compose_morning(pulse_config, weather=_weather(config_path))
+        checkin = composer.compose_morning(pulse_config, weather=_weather(config_path),
+                                  days_heard=_days_heard(config_path),
+                                  rotation=_days_heard(config_path))
         result = await voice.call(
             to_number=profile.phone,
             messages=checkin.all_messages,
@@ -548,7 +581,9 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
         _remember_question(checkin)
 
     async def do_evening():
-        checkin = composer.compose_evening(pulse_config)
+        checkin = composer.compose_evening(pulse_config,
+                                  days_heard=_days_heard(config_path),
+                                  rotation=_days_heard(config_path))
         result = await voice.call(
             to_number=profile.phone,
             messages=checkin.all_messages,
