@@ -330,6 +330,15 @@ class Household:
     # ---- serialisation --------------------------------------------------
     @classmethod
     def from_dict(cls, data: dict) -> "Household":
+        # _outside had no writer anywhere, so outside_contacts() was
+        # constant-empty and reportable_gaps() emitted "there is no monitoring
+        # service or dispatch line on file" for EVERY household including ones
+        # that had one. A warning that is always true carries no information,
+        # which is the same defect as a check that cannot fail.
+        outside = tuple(
+            (data.get(k) or {}).get("name") or k
+            for k in ("dispatch_line", "monitoring_service", "physician")
+            if (data.get(k) or {}).get("phone"))
         members = {}
         for raw in data.get("household", {}).get("members", []):
             mid = raw["member_id"]
@@ -346,4 +355,4 @@ class Household:
                 medications=list(raw.get("medications", ())),
                 address=raw.get("address", ""),
             )
-        return cls(members=members)
+        return cls(members=members, _outside=outside)

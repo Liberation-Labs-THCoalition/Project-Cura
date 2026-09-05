@@ -187,6 +187,30 @@ def _weather(config_path: str) -> dict | None:
     return out
 
 
+
+def _remember_question(checkin) -> None:
+    """If the call asked something, record it so the answer has somewhere to go.
+
+    `CuraResponder.expect_answer` had ZERO production call sites, so the pending
+    mechanism never ran and record_concern still had no caller -- the thing I
+    committed yesterday as fixed. The sender persists it rather than the
+    responder holding it in memory, because `cura run` asks and `cura webhook`
+    hears the reply, in different processes.
+    """
+    from datetime import datetime, timezone
+    from cura.comms.pending import save_pending
+    asked = [e for e in getattr(checkin, "enrichments", ())
+             if getattr(e, "category", "") == "home_safety"]
+    if not asked:
+        return
+    try:
+        save_pending("home_safety", datetime.now(timezone.utc),
+                     {"question": asked[0].message[:200]})
+    except OSError:
+        logger.warning("could not record the pending question; an answer to "
+                       "%r will be lost", asked[0].message[:60])
+
+
 def _report_call(which: str, name: str, result) -> None:
     """Say what happened, not what was attempted.
 
@@ -310,6 +334,13 @@ def _build_responder(config_path: str):
             print("\n  Cura cannot answer the phone yet — there is nobody it")
             print("  could call for help.\n")
             sys.exit(1)
+        for gap in household.reportable_gaps():
+            # Zero production callers before this, so nothing Cura knew it was
+            # NOT handling ever reached a human. Silence is safe for dosing and
+            # unsafe for trust: a caregiver who assumes Cura has something
+            # covered when it does not is worse off than one who was told.
+            logger.warning("NOT HANDLED: %s", gap)
+            print(f"  Note: {gap}")
         return CuraResponder(on_help_requested=cb)
     return CuraResponder(on_help_requested=build_escalation(voice, profile))
 
@@ -514,6 +545,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
             status_callback="/voice/status",
         )
         _report_call("Morning", name, result)
+        _remember_question(checkin)
 
     async def do_evening():
         checkin = composer.compose_evening(pulse_config)
@@ -525,6 +557,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
             status_callback="/voice/status",
         )
         _report_call("Evening", name, result)
+        _remember_question(checkin)
 
     def morning_job():
         asyncio.run(do_morning())

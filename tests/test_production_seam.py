@@ -128,3 +128,63 @@ class TestTheAddressReachesTheDispatcher:
         assert disp, "the dispatch line was never called"
         assert "41 Cottonwood Rd" in disp[0]
         assert "do not have on file" not in disp[0]
+
+
+class TestThingsBuiltYesterdayActuallyRun:
+    """Three mechanisms were committed yesterday with messages saying they were
+    wired. None of them ran: expect_answer had zero production call sites,
+    reportable_gaps had zero, and _outside had no writer at all."""
+
+    def test_a_check_in_that_asks_something_records_a_pending_question(
+            self, tmp_path, monkeypatch):
+        """Without this, record_concern still has no caller and the home safety
+        assessment still reports "no concerns identified" forever."""
+        from cura.comms import pending
+        from cura.__main__ import _remember_question
+        from cura.pulse.checkin_composer import CheckinComposer
+        from cura.pulse.eldercare_pulse import ElderProfile, EldercarePulseConfig
+        p = tmp_path / "pq.json"
+        monkeypatch.setattr(pending, "PENDING_FILE", p)
+        cfg = EldercarePulseConfig(profile=ElderProfile(
+            name="Margaret Chen", preferred_name="Margaret"))
+        c = CheckinComposer()
+        # walk compositions until one carries the safety question
+        for day in range(12):
+            checkin = c.compose_evening(cfg, days_heard=day, rotation=day)
+            if any(getattr(e, "category", "") == "home_safety"
+                   for e in checkin.enrichments):
+                _remember_question(checkin)
+                assert p.exists(), "the question was asked and not remembered"
+                return
+        pytest.skip("no safety question surfaced in 12 compositions")
+
+    def test_a_check_in_with_no_question_records_nothing(self, tmp_path,
+                                                          monkeypatch):
+        """A stale pending question would attach the next thing she says to a
+        survey nobody asked."""
+        from cura.comms import pending
+        from cura.__main__ import _remember_question
+        p = tmp_path / "pq.json"
+        monkeypatch.setattr(pending, "PENDING_FILE", p)
+        _remember_question(type("C", (), {"enrichments": ()})())
+        assert not p.exists()
+
+    def test_the_gaps_are_reported_when_a_responder_is_built(
+            self, tmp_path, capsys):
+        """A caregiver who assumes Cura has something covered when it does not
+        is worse off than one who was told."""
+        from cura.__main__ import _build_responder
+        _build_responder(str(_wizard_config(tmp_path, dispatch=False)))
+        out = capsys.readouterr().out
+        assert "nobody else for Cura to call" in out, \
+            "the household is never told what Cura is not handling"
+
+    def test_a_household_with_a_dispatch_line_is_not_warned_about_one(
+            self, tmp_path, capsys):
+        """_outside had no writer, so this warning fired for every household
+        including ones that had a dispatch line. A warning that is always true
+        carries no information."""
+        from cura.__main__ import _build_responder
+        _build_responder(str(_wizard_config(tmp_path, dispatch=True)))
+        out = capsys.readouterr().out
+        assert "no monitoring service or dispatch line on file" not in out
