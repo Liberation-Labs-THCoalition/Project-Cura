@@ -303,7 +303,8 @@ def _build_responder(config_path: str):
             voice, household, subject,
             physician=data.get("physician"),
             monitoring_service=data.get("monitoring_service"),
-            dispatch_line=data.get("dispatch_line"))
+            dispatch_line=data.get("dispatch_line"),
+            address=data.get("address", ""))
         if cb is None:
             # blocking_problems() already logged why. Refuse, as before.
             print("\n  Cura cannot answer the phone yet — there is nobody it")

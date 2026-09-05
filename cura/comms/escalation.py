@@ -107,7 +107,9 @@ def build_escalation(voice, profile) -> Callable[[str], Any] | None:
 
 def build_ladder_escalation(voice, household, subject_id: str,
                             physician: dict | None = None,
-                            monitoring_service: dict | None = None):
+                            monitoring_service: dict | None = None,
+                            dispatch_line: dict | None = None,
+                            address: str = ""):
     """An on_help_requested callback that climbs the full ladder.
 
     The household-aware replacement for build_escalation. Same contract: returns
@@ -166,7 +168,9 @@ def build_ladder_escalation(voice, household, subject_id: str,
             trail = climb(household, subject_id, context,
                           send_sms=send_sms, place_call=place_call,
                           physician=physician,
-                          monitoring_service=monitoring_service)
+                          monitoring_service=monitoring_service,
+                          dispatch_line=dispatch_line,
+                          address=address)
         except Exception:
             logger.exception(
                 "ESCALATION RAISED for %r — treat as nobody reached", context)
