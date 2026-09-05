@@ -84,6 +84,16 @@ def save(state: dict) -> None:
     os.replace(tmp, STATE)  # atomic: an interruption never leaves a half-written file
 
 
+# How many times a single question may be re-asked before the wizard gives up.
+#
+# EOF is handled below, but an stdin that keeps returning empty lines is not
+# EOF — it is an answer, an unusable one, forever. On 2026-09-02 a headless
+# `cura add-phone` sat in this loop printing "This one is needed. Please type
+# an answer." until it had written 109 GiB and taken the machine to ENOSPC.
+# A wizard that cannot make progress must stop, not narrate.
+MAX_ATTEMPTS = 5
+
+
 def ask(state: dict, key: str, question: str, help_text: str = "",
         validate=None, default: str | None = None, optional: bool = False) -> str:
     """Ask once, save immediately, never ask again.
@@ -94,7 +104,7 @@ def ask(state: dict, key: str, question: str, help_text: str = "",
     if key in state:
         return state[key]
 
-    while True:
+    for attempt in range(MAX_ATTEMPTS):
         rule()
         say(question, blank_after=1)
         if help_text:
@@ -121,6 +131,7 @@ def ask(state: dict, key: str, question: str, help_text: str = "",
         if not raw:
             say("This one is needed. Please type an answer.")
             continue
+
         if validate:
             problem = validate(raw)
             if problem:
@@ -130,6 +141,14 @@ def ask(state: dict, key: str, question: str, help_text: str = "",
         state[key] = raw
         save(state)
         return raw
+
+    # Out of attempts. Nothing answered, so nothing is saved for this key and
+    # re-running resumes here — the same promise the EOF path makes.
+    say("")
+    say(f"That question went unanswered {MAX_ATTEMPTS} times, so Cura has stopped "
+        "rather than keep asking.")
+    say("Nothing is lost — run the same command again to pick up right here.")
+    sys.exit(1)
 
 
 # ---------------------------------------------------------------- validators
