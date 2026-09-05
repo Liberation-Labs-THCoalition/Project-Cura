@@ -156,6 +156,37 @@ def main() -> None:
 
 
 
+
+def _weather(config_path: str) -> dict | None:
+    """Weather for this household, or None to say nothing about it.
+
+    Nothing fetched any, so the enrichment that says "it's going to be eight
+    degrees, please stay indoors" -- and the ALERT path with it -- had no supply.
+    A failed fetch returns None and Cura simply does not mention the weather:
+    stale weather stated confidently is worse than silence, because a lapsed
+    warning tells someone it is safe to go out.
+    """
+    import json as _json
+    from cura.integrations.weather import for_household
+    try:
+        with open(config_path) as f:
+            cfg = _json.load(f)
+    except (OSError, ValueError):
+        return None
+    before = (cfg.get("lat"), cfg.get("lon"))
+    out = for_household(cfg)
+    if (cfg.get("lat"), cfg.get("lon")) != before:
+        # Geocoded for the first time. Cache it so the geocoder is called once
+        # per household rather than twice a day forever.
+        try:
+            from cura.setup.wizard import write_config
+            from pathlib import Path as _P
+            write_config(_P(config_path), {"lat": cfg["lat"], "lon": cfg["lon"]})
+        except Exception:
+            logger.info("could not cache coordinates; will geocode again")
+    return out
+
+
 def _report_call(which: str, name: str, result) -> None:
     """Say what happened, not what was attempted.
 
@@ -356,7 +387,12 @@ def _preview(config_path: str) -> None:
     print()
     print(f"  In the morning, around {profile.morning_time}:00 —")
     print()
-    for msg in composer.compose_morning(cfg).all_messages:
+    # Rehearsal must show what will ACTUALLY be heard, weather included.
+    # A different variable name here meant this site was missed on the
+    # first pass, so `cura rehearse` would have shown a check-in without
+    # the line the real call says.
+    for msg in composer.compose_morning(
+            cfg, weather=_weather(config_path)).all_messages:
         print(f"      Cura:  {msg}")
     print()
     try:
@@ -456,7 +492,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
         print()
         print("For now, here's what a morning check-in would say:")
         print()
-        checkin = composer.compose_morning(pulse_config)
+        checkin = composer.compose_morning(pulse_config, weather=_weather(config_path))
         for msg in checkin.all_messages:
             print(f"  Cura: {msg}")
         sys.exit(0)
@@ -464,7 +500,7 @@ def _run_scheduled(config_path: str, dry_run: bool = False) -> None:
     import asyncio
 
     async def do_morning():
-        checkin = composer.compose_morning(pulse_config)
+        checkin = composer.compose_morning(pulse_config, weather=_weather(config_path))
         result = await voice.call(
             to_number=profile.phone,
             messages=checkin.all_messages,
