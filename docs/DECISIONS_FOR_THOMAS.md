@@ -89,6 +89,41 @@ decided it than inherited it from how I happened to write a module.
 
 ---
 
+## 5. The scam scanner has never seen a message  ·  needs a design call
+
+**The finding:** `cura/privacy/message_scanner.py` has exactly one reference in
+the entire repository — its own class definition. Zero production callers, in
+any commit in repo history. It is correct and 17/17 green under test.
+
+**Verified on a Medicare phishing body:**
+
+    MessageScanner  ->  dangerous, risk 0.60, three indicators
+    ScamShield      ->  None
+
+`ScamShield` is the one that IS wired — console, MCP server, composer. So the
+live path answers "clean" on a message the unwired module flags as dangerous,
+while `CLAUDE.md` lists "email provenance scanning" as delivered Phase 1 and the
+MCP surface advertises email analysis.
+
+**Why I did not just wire it:** there is no mail ingestion anywhere in Cura. No
+IMAP, no Gmail, no forwarding address — the webhook exposes `/health` and five
+`/voice/*` routes and nothing else. Wiring the scanner means deciding how mail
+reaches Cura at all, which is a product decision with a privacy cost attached
+(it means holding or reading a household's email), and inventing one unasked at
+3am is how the next instance of this gets made.
+
+**Options, roughly:** a forwarding address the household can send suspicious mail
+to; an IMAP connection with credentials we would then hold; or scoping it to
+what already arrives — SMS, which Twilio already delivers, and which
+`scan_sms` already handles.
+
+**My recommendation:** the third. SMS is already in the system, it needs no new
+credentials or ingestion, and text-message fraud is the more common vector for
+this demographic anyway. Then the claim in CLAUDE.md gets narrowed to what is
+true.
+
+---
+
 ## Not a decision, but worth knowing
 
 Nexus needs no answer to start the local Mnemosyne variant — the household model
