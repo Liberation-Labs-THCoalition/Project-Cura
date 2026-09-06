@@ -24,8 +24,11 @@ The safety rule that shapes this whole module:
 
 If Cura has no record of the last dose, that is not "it has been a long time".
 She may have taken one twenty minutes ago and not said so, or a caregiver may
-have given it. So the PRN check returns three states and never two: ALLOWED,
-TOO_SOON, and UNKNOWN. UNKNOWN is never collapsed into ALLOWED. Getting this
+have given it. So the PRN check returns FOUR states and never two: ALLOWED,
+TOO_SOON, UNKNOWN, and AT_DAILY_MAX. UNKNOWN is never collapsed into ALLOWED.
+TOO_SOON and AT_DAILY_MAX are the two refusals and they are not the same
+refusal: TOO_SOON clears with time, AT_DAILY_MAX does not clear until the
+24-hour window rolls. Getting this
 wrong is a double dose of an opioid or a benzodiazepine in a household where
 nobody can reliably remember the first one.
 
@@ -53,7 +56,16 @@ class Schedule(str, Enum):
 
 
 class PRNVerdict(str, Enum):
-    """Three states, deliberately. See the module docstring."""
+    """FOUR states. See the module docstring.
+
+    This said "three states, deliberately" until 2026-09-06, and the module
+    docstring below enumerated them as ALLOWED, TOO_SOON and UNKNOWN.
+    AT_DAILY_MAX was added afterwards and neither was updated. That stale
+    sentence travelled: Nexus built cura_local's DoseLedger against "your
+    three-state invariant" and produced RECORDED / NOT_DUE / UNKNOWN — a
+    ledger enum with no ALLOWED in it, so the invariant that UNKNOWN never
+    collapses into ALLOWED cannot even be stated in it. Documentation that
+    lies about a safety contract propagates into other people's code.""" 
     ALLOWED = "allowed"
     TOO_SOON = "too_soon"
     UNKNOWN = "unknown"       # no dose record -- defer to a human
