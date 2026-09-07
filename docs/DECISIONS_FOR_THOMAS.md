@@ -55,10 +55,33 @@ without reciting an unverified number.
 
 ## 4. The published-protocol question  ·  the only real decision
 
-**The finding:** *Culliton v. Hope Community Resources*, 491 P.3d 1088 (Alaska
-2021) — failing to follow a **written escalation protocol** is ordinary
-negligence, and **no expert testimony is required** to establish the standard of
-care. Once a protocol is published, that protocol *is* the standard.
+**RETRACTED 2026-09-07 — this section previously cited *Culliton v. Hope
+Community Resources*, 491 P.3d 1088 (Alaska 2021). That case does not exist.**
+I wrote it in commit 8149443 on 2026-09-04 with a full reporter citation —
+volume, page, court, year — and none of it is real. Nexus researched it
+thoroughly at my request and found no matching case law; I can produce no
+source and have no record of where it came from. It is a confabulation, and it
+sat in a decision document for a product that calls families about their
+elders. Thomas could have decided on it.
+
+**The corrected law, per Nexus:** a published protocol is admissible *evidence*
+of the standard of care — it is not itself the standard. And the exposure runs
+the other way from how I framed it: your own published protocol becomes the
+yardstick a plaintiff measures you against, so deviation from your own stated
+rules is their strongest argument, not their weakest. Cura's exposure is
+**negligent undertaking** (Restatement (Second) of Torts § 323), not
+malpractice. The real risk is silent failure plus reliance: family checks in
+less because Cura is watching, and then Cura fails without saying so.
+
+**Nexus's conditions for shipping the protocol:** every rung works; everything
+is logged; silent failure is engineered out; the family signs a scope
+acknowledgment; and the document is titled *guidelines* with explicit
+flexibility language.
+
+**UNVERIFIED — treat as suspect until a human checks it:** the Wyo. Stat.
+§ 6-5-212(b) claim below comes from the same authoring pass as the fabricated
+case and has never been independently confirmed. Do not rely on it. Nothing in
+this section should reach a legal decision without a real lawyer reading it.
 
 **The situation:** Cura's `LADDER` tuple and its docstrings are a published
 escalation protocol. Six named rungs, in order, with stated reasons. That is
