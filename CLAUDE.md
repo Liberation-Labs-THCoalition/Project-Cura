@@ -89,5 +89,14 @@ Never diagnose. Never prescribe. Never call 911 directly.
 
 ```bash
 cd /home/asdf/Project-Cura
-python -m pytest tests/ -x -q
+.venv/bin/python -m pytest tests/ -q      # THE VENV IS NOT OPTIONAL
+
+# Run it any other way and the verdict changes. On 2026-09-08 the suite
+# reported 18 failures under a different interpreter -- flask and
+# pytest-asyncio missing -- including all seven webhook signature-gate tests,
+# which assert that an unsigned Twilio POST is rejected. Nothing was broken;
+# they had simply never run. A suite whose answer depends on which python is
+# on PATH is a suite that can report anything.
+#   .venv/bin/pip install -e '.[test]'    # if pytest is missing
+# Expected: 769 passed.
 ```

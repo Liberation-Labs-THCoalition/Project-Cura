@@ -27,3 +27,13 @@ include = ["cura*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[project.optional-dependencies]
+# Pinned 2026-09-08. Without these the suite does not FAIL, it reports 18
+# failures that are really "never exercised" -- including all seven webhook
+# signature-gate tests. flask was declared and pytest/pytest-asyncio were not,
+# so the verdict depended on which interpreter happened to be on PATH.
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
