@@ -1,37 +1,27 @@
-"""The elder-abuse guard is NOT WIRED. This test is red on purpose.
+"""The elder-abuse guard is SHELVED. This file enforces one invariant:
 
-Found 2026-09-08 by a cardinality sweep. ElderGuardian.process() can return
-exactly one value in the shipped system -- {"action": "continue"} -- and it is
-dead twice over:
+    EITHER IT WORKS, OR IT DOES NOT CLAIM TO.
 
-  1. ZERO production callers. No module imports it. No test exercised it.
-  2. Even if wired it could not fire. assess(self, message, metadata) NEVER
-     READS `message` -- the elder's own words are the first parameter and the
-     body never touches them. Every branch reads metadata keys, and of those:
-         scam_detected      2 producers, both returning it to an MCP client,
-                            neither routing it to any guardian
-         abuse_detected     0 producers anywhere in the repo
-         isolation_pattern  0 producers
-         abuse_severity     0 producers
-         scam_severity      0 producers
+Shelved 2026-09-08 by Thomas — not a priority for this deployment, revisit only
+with a qualified clinical partner. Classifying a struggling caregiver as abusive
+is not something to wing, "either for my family or for strangers."
 
-The scam-defense half of Cura IS real -- ScamShield is wired into
-checkin_composer.py and has tests. The CAREGIVER ABUSE, COERCION and ISOLATION
-half has never been able to fire once.
+The previous version of this file failed on purpose, because the module's
+docstring described active elder-abuse protection while the code could only ever
+return {"action": "continue"}. That gap is now closed from the honest side: the
+docstring says SHELVED. So these tests pass — and they go red the moment anyone
+restores protective language without also wiring the thing up.
 
-The household this is built for, from the project's own handoff: a man in his
-seventies in rural Wyoming, sole caregiver for his wife with late-stage
-dementia. Caregiver-abuse detection matters most exactly where the caregiver is
-alone and under strain.
+WHY THAT DIRECTION. A shelved feature is fine. A shelved feature that still reads
+as shipped is the original defect in a nicer coat, and it is how a README ends up
+promising a family something the code cannot do.
 
-WHY THIS TEST FAILS INSTEAD OF BEING SKIPPED
-A skip is a note. This is a safety guard that the README describes as
-protective, so the gap must be LOUD until it closes. Building the actual
-detector needs Thomas and the medtech advisor -- text-classifying a struggling
-caregiver as abusive has a false-positive cost measured in families -- so this
-does not attempt it. It only refuses to let the gap be quiet.
+What was actually wrong, kept here because it is the reason the invariant exists:
+  - zero production callers; nothing imported it
+  - assess(self, message, metadata) NEVER read `message`
+  - abuse_detected / isolation_pattern / abuse_severity: zero producers repo-wide
 
-Delete this file when the guard is wired AND reads the message. Not before.
+Delete this file only when the guard is wired AND reads the message. Not before.
 """
 import pathlib
 import subprocess
@@ -39,13 +29,13 @@ import subprocess
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GUARD = REPO / "cura/tools/boundary_guardian.py"
 
-
-#: Files whose mentions do not count as a caller. THIS FILE IS IN THE LIST,
-#: and it was not on the first attempt: two of these tests passed because the
-#: grep matched the very test file asserting the absence. A check whose input
-#: contains the check cannot fail. That is the exact defect this file exists to
-#: catch, committed inside it, within a minute of writing it.
+#: This file does not count as a caller. It was not excluded on the first
+#: attempt, and two tests passed because the grep matched the very file
+#: asserting the absence. A check whose input contains the check cannot fail.
 _NOT_A_CALLER = ("boundary_guardian.py", "test_boundary_guardian_is_wired.py")
+
+#: Words that assert active protection. Present in the docstring => must be wired.
+_PROTECTIVE_CLAIMS = ("watches for", "protects vulnerable", "detection and protection")
 
 
 def _grep(pattern: str) -> list[str]:
@@ -55,47 +45,45 @@ def _grep(pattern: str) -> list[str]:
             if not any(skip in l for skip in _NOT_A_CALLER)]
 
 
-def test_elder_guardian_has_a_production_caller():
-    callers = _grep("ElderGuardian")
-    assert callers, (
-        "ElderGuardian has NO production caller. The elder-abuse, coercion and "
-        "isolation guard is imported by nothing, so it has never run. "
-        "Wire it into the message path (cura/comms/responder.py or "
-        "cura/pulse/checkin_composer.py) or delete it -- a protective module "
-        "that cannot run is worse than an absent one, because the README counts it.")
+def _is_wired() -> bool:
+    return bool(_grep("ElderGuardian"))
 
 
-def test_assess_reads_the_elders_words():
-    """The guard takes the elder's message and never looks at it."""
+def test_it_does_not_claim_protection_it_cannot_deliver():
+    """THE INVARIANT. Restoring protective language without wiring turns this red."""
+    doc = GUARD.read_text()[:2000].lower()
+    claims = [c for c in _PROTECTIVE_CLAIMS if c in doc]
+    if claims and not _is_wired():
+        raise AssertionError(
+            f"boundary_guardian.py claims active protection {claims} while having "
+            f"no production caller. Either wire it into the message path, or say "
+            f"SHELVED. It cannot describe itself as watching for abuse while being "
+            f"unable to return anything but 'continue'.")
+
+
+def test_the_shelved_status_is_stated_where_someone_will_see_it():
+    """A shelved module that does not say so is indistinguishable from a live one."""
+    head = GUARD.read_text()[:400].upper()
+    assert "SHELVED" in head or _is_wired(), (
+        "The guard is neither wired nor marked SHELVED in its first lines. "
+        "Someone reading this module has no way to know it never runs.")
+
+
+def test_assess_still_does_not_read_the_message_and_that_is_recorded():
+    """Documents the defect so un-shelving cannot start from a false premise.
+    If someone rewrites assess() to read the message, this test tells them to
+    delete it — the file's whole reason is gone at that point."""
     src = GUARD.read_text()
     body = src[src.index("def assess("):src.index("def process(")]
-    signature_end = body.index(")")
-    uses = body[signature_end:].count("message")
-    assert uses > 0, (
-        "assess(self, message, metadata) never reads `message`. Every branch "
-        "reads metadata keys instead, so the elder's own words cannot trigger "
-        "the guard under any circumstance.")
+    reads_message = "message" in body[body.index(")"):]
+    if reads_message:
+        raise AssertionError(
+            "assess() now reads `message` — the guard may be real. Verify it is "
+            "wired and tested, then DELETE this file; its premise no longer holds.")
 
 
-def test_the_metadata_keys_the_guard_reads_are_produced_by_something():
-    """A guard whose inputs nothing writes is a guard that cannot fire."""
-    orphans = {k: _grep(f'"{k}"') for k in
-               ("abuse_detected", "isolation_pattern", "abuse_severity")}
-    dead = {k: v for k, v in orphans.items() if not v}
-    assert not dead, (
-        f"These metadata keys gate the abuse/isolation branches and NOTHING in "
-        f"the repo ever sets them: {sorted(dead)}. The branches are unreachable, "
-        f"so process() returns the constant 'continue' for every input.")
-
-
-def test_configurable_alert_thresholds_are_actually_read():
-    """alert_family_threshold / alert_authorities_threshold are config knobs no
-    code reads -- escalation is decided by a hardcoded 0.9. A deployer lowering
-    the bar for a fragile household changes nothing, silently."""
-    src = GUARD.read_text()
-    for knob in ("alert_family_threshold", "alert_authorities_threshold"):
-        uses = src.count(knob)
-        assert uses > 1, (
-            f"{knob} is declared and never read (appears {uses}x, declaration "
-            f"only). Severity routing uses a literal 0.9 at the comparison site, "
-            f"so tuning this knob has no effect.")
+def test_the_scam_half_is_genuinely_wired_and_stays_that_way():
+    """The half that DOES work. Regression guard: scam defense is real, tested,
+    and must not get shelved by association with the abuse half."""
+    assert _grep("ScamShield"), "ScamShield lost its production caller"
+    assert (REPO / "tests/test_scam_shield.py").exists(), "scam shield tests vanished"

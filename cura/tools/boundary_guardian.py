@@ -1,13 +1,36 @@
-"""BoundaryGuardian for Cura — elder abuse detection and protection.
+"""SHELVED — NOT ACTIVE. Do not describe Cura as detecting elder abuse.
 
-Cura protects vulnerable elders. The boundary guardian watches for:
-- Financial exploitation attempts (scams routed through Cura)
-- Verbal/emotional abuse from caregivers or family
-- Attempts to isolate the elder from support networks
-- Coercion to change medications, finances, or legal documents
-- Signs the elder is being coached or pressured during calls
+    STATUS: shelved 2026-09-08 by Thomas. Not a priority for this deployment.
+    Revisit only with a qualified clinical partner.
 
-Cura's voice is warm and protective — a concerned friend, not an authority.
+This module was written to watch for financial exploitation, verbal abuse,
+isolation, medication coercion and coached speech. **It has never done any of
+that**, and the previous version of this docstring said it did.
+
+Why it never worked (found 2026-09-08):
+  - No production caller. Nothing imports it.
+  - assess(self, message, metadata) NEVER READS `message`. The elder's own
+    words are the first parameter and the body never touches them.
+  - Every branch gates on a metadata key, and `abuse_detected`,
+    `isolation_pattern` and `abuse_severity` have ZERO producers anywhere in
+    the repo. process() can only ever return {"action": "continue"}.
+
+Why it is shelved rather than fixed, in Thomas's words: classifying a
+struggling caregiver as abusive is not something to wing, "either for my family
+or for strangers." A false positive means telling a household that the person
+keeping their mother alive is hurting her. That threshold belongs to a clinical
+partner, not to us.
+
+WHAT STILL WORKS, and is separate from this: the scam-defense half.
+`cura/privacy/scam_shield.py` is wired into checkin_composer.py:109 and covered
+by tests/test_scam_shield.py. Scam education, screening questions, keyword
+detection and email provenance are real.
+
+The invariant this file is now held to, enforced by
+tests/test_boundary_guardian_is_wired.py: **either it works, or it does not
+claim to.** Restoring protective language without wiring it turns those tests
+red. A shelved feature that still reads as shipped is the same defect wearing a
+nicer coat.
 """
 
 import logging
