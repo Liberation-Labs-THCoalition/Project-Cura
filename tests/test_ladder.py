@@ -252,23 +252,23 @@ class TestTheRungThatReachesOutsideTheHouse:
     def test_the_dispatch_line_is_tried_when_the_household_cannot_be_reached(self):
         from cura.comms.ladder import Rung
         sms, _ = _dialer()
-        call, log = _dialer(answers=("+13076841111",))
+        call, log = _dialer(answers=("+13075550190",))
         t = climb(_house(), "ray", "no movement since 6am",
                   send_sms=sms, place_call=call,
                   dispatch_line={"name": "Johnson County dispatch",
-                                 "phone": "+13076841111"},
+                                 "phone": "+13075550190"},
                   address="41 Cottonwood Rd, Buffalo WY")
-        assert "+13076841111" in log
+        assert "+13075550190" in log
         assert t.reached_anyone
 
     def test_it_is_reached_in_the_sole_caregiver_scenario(self):
         """The scenario the ladder exists for: Ray is down, Margaret cannot
         answer a phone, nobody else is in the household."""
         sms, _ = _dialer()
-        call, log = _dialer(answers=("+13076841111",))
+        call, log = _dialer(answers=("+13075550190",))
         t = climb(_house(), "ray", "fall detected",
                   send_sms=sms, place_call=call,
-                  dispatch_line={"name": "dispatch", "phone": "+13076841111"})
+                  dispatch_line={"name": "dispatch", "phone": "+13075550190"})
         assert t.reached_anyone, \
             "the sole-caregiver scenario still ends at nobody reached"
 
@@ -277,8 +277,8 @@ class TestTheRungThatReachesOutsideTheHouse:
         call, log = _dialer(answers=())
         climb(_house(), "ray", "ctx", send_sms=sms, place_call=call,
               monitoring_service={"name": "Affiliated", "phone": "+18005551111"},
-              dispatch_line={"name": "dispatch", "phone": "+13076841111"})
-        assert log.index("+18005551111") < log.index("+13076841111")
+              dispatch_line={"name": "dispatch", "phone": "+13075550190"})
+        assert log.index("+18005551111") < log.index("+13075550190")
 
     def test_neither_configured_is_unavailable_not_failed(self):
         from cura.comms.ladder import Rung
@@ -327,10 +327,10 @@ class TestTheDispatcherScriptGetsAnAmbulance:
             spoken.append((number, message)); return False
         climb(_house(thomas=THOMAS), "ray", "fall detected",
               send_sms=sms, place_call=call,
-              dispatch_line={"name": "dispatch", "phone": "+13076841111"},
+              dispatch_line={"name": "dispatch", "phone": "+13075550190"},
               address="41 Cottonwood Rd, Buffalo WY")
         family = [m for n, m in spoken if n == "+15305551234"]
-        disp = [m for n, m in spoken if n == "+13076841111"]
+        disp = [m for n, m in spoken if n == "+13075550190"]
         assert family and disp
         assert "ambulance" not in family[0].lower()
         assert "ambulance" in disp[0].lower()

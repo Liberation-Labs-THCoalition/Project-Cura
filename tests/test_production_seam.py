@@ -42,7 +42,7 @@ def _wizard_config(tmp_path, *, can_answer="no", dispatch=True, twilio=True):
                          "phone_number": "+15550001111"}
     if dispatch:
         cfg["dispatch_line"] = {"name": "Johnson County dispatch",
-                                "phone": "+13076841111"}
+                                "phone": "+13075550190"}
     cfg["household"] = _household_block(state, [], cfg)
     p = tmp_path / "margaret.json"
     p.write_text(json.dumps(cfg))
@@ -122,9 +122,9 @@ class TestTheAddressReachesTheDispatcher:
         climb(h, "ray", "no movement since 6am",
               send_sms=lambda n, m: False,
               place_call=lambda n, m: (spoken.append((n, m)), False)[1],
-              dispatch_line={"name": "dispatch", "phone": "+13076841111"},
+              dispatch_line={"name": "dispatch", "phone": "+13075550190"},
               address="41 Cottonwood Rd, Buffalo WY")
-        disp = [m for n, m in spoken if n == "+13076841111"]
+        disp = [m for n, m in spoken if n == "+13075550190"]
         assert disp, "the dispatch line was never called"
         assert "41 Cottonwood Rd" in disp[0]
         assert "do not have on file" not in disp[0]
