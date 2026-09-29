@@ -76,7 +76,9 @@ def build_escalation(voice, profile) -> Callable[[str], Any] | None:
             logger.error("ESCALATION UNAVAILABLE: %s", p)
         return None
 
-    def on_help_requested(context: str) -> None:
+    def on_help_requested(context: str) -> bool | None:
+        """True if a contact was reached, False if nobody was, None if the alert
+        was scheduled and its outcome is not known yet."""
         logger.warning("ESCALATION FIRING: %s", context)
         try:
             coro = voice.crisis_alert(
@@ -97,11 +99,14 @@ def build_escalation(voice, profile) -> Callable[[str], Any] | None:
                 else:
                     logger.warning("ESCALATION delivered to %d contact(s)",
                                    len(reached))
+                return bool(reached)
         except Exception:
             # Never let an escalation failure be swallowed. If this path is
             # silent, the household learns nothing and neither do we.
             logger.exception("ESCALATION FAILED for %r — nobody was contacted",
                              context)
+            return False
+        return None
 
     return on_help_requested
 
@@ -161,7 +166,8 @@ def build_ladder_escalation(voice, household, subject_id: str,
             return False
         return bool(getattr(r, "answered", False))
 
-    def on_help_requested(context: str) -> None:
+    def on_help_requested(context: str) -> bool:
+        """True if the ladder reached anyone; False otherwise, including on error."""
         from cura.comms.ladder import climb
         logger.warning("ESCALATION FIRING: %s", context)
         try:
@@ -174,7 +180,7 @@ def build_ladder_escalation(voice, household, subject_id: str,
         except Exception:
             logger.exception(
                 "ESCALATION RAISED for %r — treat as nobody reached", context)
-            return
+            return False
         if trail.reached_anyone:
             logger.warning("ESCALATION: %s", trail.summary())
         else:
@@ -185,5 +191,6 @@ def build_ladder_escalation(voice, household, subject_id: str,
                         else ("texted " + ", ".join(r.reached) if r.is_broadcast and r.reached
                               else ("no answer from " + ", ".join(r.failed) if r.failed
                                     else "not available: " + r.unavailable_because)))
+        return trail.reached_anyone
 
     return on_help_requested

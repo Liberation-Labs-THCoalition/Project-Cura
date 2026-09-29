@@ -102,14 +102,26 @@ class CuraResponder:
         warmest thing Cura says to a frightened person.
         """
         if self._on_help:
-            self._on_help(context)
-            return when_reachable
-
-        logger.error(
-            "ESCALATION REQUESTED WITH NO CALLBACK WIRED (%s). Nobody was "
-            "contacted. Cura must not be placing live calls in this state.",
-            context,
-        )
+            # The callback's own verdict decides. True: someone was reached.
+            # None: it started and the outcome is not known yet (an alert
+            # scheduled on a running loop); "contacting" is still true then.
+            # False, or an exception: nobody was reached, and Cura says so.
+            try:
+                outcome = self._on_help(context)
+            except Exception:
+                logger.exception("ESCALATION RAISED (%s). Nobody can be assumed "
+                                 "reached.", context)
+                outcome = False
+            if outcome is not False:
+                return when_reachable
+            logger.critical("ESCALATION REACHED NOBODY (%s). Cura will not "
+                            "promise help.", context)
+        else:
+            logger.error(
+                "ESCALATION REQUESTED WITH NO CALLBACK WIRED (%s). Nobody was "
+                "contacted. Cura must not be placing live calls in this state.",
+                context,
+            )
         return ("I can't reach anyone for you myself right now. "
                 "If you need help, please hang up and dial nine one one. "
                 "I'm going to stay on the line with you.")
@@ -274,12 +286,14 @@ class CuraResponder:
                        "and what did they ask for?",
             }
         elif digit == "4":
-            if self._on_help:
-                self._on_help(f"{elder_name} called and pressed 4 — needs help")
+            # Through the guard, like every other help path. This one called the
+            # callback directly and promised regardless (Vera, 2026-09-24).
             return {
                 "action": "help_requested",
-                "say": "I'm contacting your family right now. Stay on the line with me. "
-                       "You're not alone.",
+                "say": self._promise_help(
+                    f"{elder_name} called and pressed 4 — needs help",
+                    when_reachable="I'm contacting your family right now. "
+                                   "Stay on the line with me. You're not alone."),
             }
         return {
             "action": "unknown",
