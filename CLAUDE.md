@@ -2,7 +2,7 @@
 
 ## What Is Cura
 
-Cura (*Cura fidelis* — faithful care) is an AI eldercare companion built on the Kintsugi Engine. It unifies seven disconnected eldercare silos — emergency response, medication management, remote monitoring, fall detection, benefits navigation, caregiver coordination, and social companionship — into one intelligent, privacy-first system.
+Cura (*Cura fidelis* — faithful care) is an AI eldercare companion. It unifies seven disconnected eldercare silos — emergency response, medication management, remote monitoring, fall detection, benefits navigation, caregiver coordination, and social companionship — into one intelligent, privacy-first system.
 
 Named for the Roman spirit who shaped humanity from clay and was granted the right to tend them throughout their lives. Because she shaped them with concern.
 
@@ -10,16 +10,19 @@ The technology doesn't replace family. It makes sure family gets the call.
 
 ## Architecture
 
-Built on Kintsugi Engine primitives:
-- **Pulse** — self-modifying heartbeat for daily check-ins + continuous monitoring
-- **BDI** — beliefs about the elder's health/patterns, desires from care goals, intentions from active care plans
-- **EFE** — health risk-weighted decision-making
-- **VALUES.json** — HIPAA-grade privacy, ongoing consent, dignity-preserving
-- **Comms Dispatcher** — phone calls (Twilio), SMS, family dashboard
-- **Shield Module** — maximum privacy enforcement
+What runs (checked against the code 2026-10-17):
+- **Check-ins:** `cura run` schedules the morning and evening calls with APScheduler; `CheckinComposer` writes what
+  is said; `CuraVoice` places the call through Twilio.
+- **Help and escalation:** `cura webhook` hands each spoken reply to `CuraResponder`: help words first, scam words
+  second, a pending question third. Help goes up the ladder in `cura/comms/ladder.py`, calling only the household
+  members `household.may_call` allows, then any outside rung (a monitoring service or dispatch line).
+- **What Cura is not handling:** `cura/readiness.py::readiness_gaps()` lists it in plain lines for the caregiver.
+  Showing it in `cura rehearse` and `cura_health` comes next (rollout spec C2, C3).
+- **Values:** `config/VALUES.json` states Cura's values; no code reads it at run time.
+- **Kintsugi:** not used. (An earlier version of this file said Cura was built on Kintsugi primitives; it never was.)
 
 ```
-Phone/SMS (Twilio) ←→ Pulse Engine ←→ Sensor Layer
+Phone/SMS (Twilio) ←→ Check-in scheduler ←→ Sensor Layer
                          ↓                  ↓
                    Intelligence      Wearable Bridge
                     (patterns,        (BLE vitals)
@@ -44,7 +47,7 @@ cura/
   dashboard/   Family/caregiver web dashboard
   memory/      Elder profile, pattern history, medication tracking
 config/        VALUES.json templates for eldercare
-tests/         Test suite (80 tests)
+tests/         Test suite (799 tests)
 docs/          Architecture spec, regulatory notes
 ```
 
@@ -79,7 +82,7 @@ Never diagnose. Never prescribe. Never call 911 directly.
 
 ## Team
 
-- **CC (Coalition Code)** — Architecture, Kintsugi integration
+- **CC (Coalition Code)** — Architecture
 - **Thomas Edrington** — Project direction
 - **Liberation Labs / TH Coalition** — Parent organization
 - Clinical advisor, eldercare professional, legal review: TBD
@@ -98,5 +101,5 @@ cd /home/asdf/Project-Cura
 # they had simply never run. A suite whose answer depends on which python is
 # on PATH is a suite that can report anything.
 #   .venv/bin/pip install -e '.[test]'    # if pytest is missing
-# Expected: 769 passed.
+# Expected: 799 passed.
 ```

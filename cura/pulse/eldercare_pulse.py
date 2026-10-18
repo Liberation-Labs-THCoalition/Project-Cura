@@ -1,6 +1,6 @@
 """Eldercare Pulse — the heartbeat of a faithful companion.
 
-Configures the Kintsugi Pulse primitive for eldercare:
+Eldercare check-in configuration (APScheduler-driven; not the Kintsugi Pulse):
   Morning: medication + wellness check
   Midday: activity monitoring (adaptive)
   Evening: daily summary + medication
