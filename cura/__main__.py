@@ -466,6 +466,18 @@ def _preview(config_path: str) -> None:
         for msg in evening:
             print(f"      Cura:  {msg}")
         print()
+    # What Cura is NOT handling, said out loud at rehearsal (rollout spec C2). Imported here, never at module level.
+    try:
+        from cura.readiness import readiness_gaps
+        gaps = readiness_gaps(config_path)
+    except Exception as e:
+        gaps = [f"the readiness check failed ({type(e).__name__}); treat everything below as unchecked"]
+    if gaps:
+        print("  Cura is NOT handling:")
+        print()
+        for g in gaps:
+            print(f"      - {g}")
+        print()
     print("  If that sounds right, you're ready.")
     print()
 

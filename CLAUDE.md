@@ -17,7 +17,8 @@ What runs (checked against the code 2026-10-17):
   second, a pending question third. Help goes up the ladder in `cura/comms/ladder.py`, calling only the household
   members `household.may_call` allows, then any outside rung (a monitoring service or dispatch line).
 - **What Cura is not handling:** `cura/readiness.py::readiness_gaps()` lists it in plain lines for the caregiver.
-  Showing it in `cura rehearse` and `cura_health` comes next (rollout spec C2, C3).
+  `cura rehearse` prints it under "Cura is NOT handling:" (rollout spec C2), and `cura_health` returns it as
+  `gaps` (C3). Neither path reaches the call path: `tests/test_engine_isolation.py` checks the imports.
 - **Values:** `config/VALUES.json` states Cura's values; no code reads it at run time.
 - **Kintsugi:** not used. (An earlier version of this file said Cura was built on Kintsugi primitives; it never was.)
 
@@ -47,7 +48,7 @@ cura/
   dashboard/   Family/caregiver web dashboard
   memory/      Elder profile, pattern history, medication tracking
 config/        VALUES.json templates for eldercare
-tests/         Test suite (803 tests)
+tests/         Test suite (810 tests)
 docs/          Architecture spec, regulatory notes
 ```
 
@@ -101,5 +102,5 @@ cd /home/asdf/Project-Cura
 # they had simply never run. A suite whose answer depends on which python is
 # on PATH is a suite that can report anything.
 #   .venv/bin/pip install -e '.[test]'    # if pytest is missing
-# Expected: 803 passed.
+# Expected: 810 passed.
 ```
