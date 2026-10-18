@@ -422,8 +422,10 @@ def create_server(
         })
 
     async def _handle_health(args: dict) -> list[TextContent]:
+        from cura.readiness import gaps_for_health
         return _json_response({
             "status": "healthy",
+            "gaps": gaps_for_health(config_path),
             "elder_name": profile.display_name,
             "pulse": {
                 "checkins_7d": len(pulse.recent_checkins),

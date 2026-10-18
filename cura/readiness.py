@@ -33,3 +33,13 @@ def readiness_gaps(config_path) -> list:
     for name in unknown_timing_medications(profile.medications):
         gaps.append(f"Cura does not know when {name} is taken and will not name it")
     return gaps
+
+
+def gaps_for_health(config_path) -> list:
+    """The gaps for cura_health (rollout spec C3): never raises, and says so when there is no elder config."""
+    if not config_path:
+        return ["no elder config loaded"]
+    try:
+        return readiness_gaps(config_path)
+    except Exception as e:
+        return [f"the readiness check failed ({type(e).__name__}); treat everything as unchecked"]
