@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 #: NWS asks for a contact in the User-Agent. Not enforced, but requested, and
 #: sending one costs nothing.
-USER_AGENT = "(Cura eldercare companion, cc@liberation-labs.org)"
+USER_AGENT = "(Cura eldercare companion, cc@liberationlabs.tech)"
 
 #: How long a fetch stays usable. Short, because the point of the alert path is
 #: that it is CURRENT. A warning that expired an hour ago is worse than silence.
