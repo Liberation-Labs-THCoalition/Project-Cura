@@ -64,6 +64,15 @@ from cura.comms.caregiver_summary import CaregiverSummaryBuilder, DailySummary
 from cura.memory.companion_memory import CompanionMemory, MemoryStore
 
 
+#: What this server says when someone may be in trouble. It has no way to reach
+#: anyone, so it says so, and names who can help.
+CANNOT_REACH_ANYONE = (
+    "I can't reach your family from here. This conversation doesn't contact "
+    "anyone. If you need help now, please call 911, or call someone you trust. "
+    "I'll stay right here with you."
+)
+
+
 def _load_config(config_path: str) -> dict:
     p = Path(config_path)
     if p.exists():
@@ -275,13 +284,17 @@ def create_server(
                 source=context,
                 follow_up=True,
             )
+            # This server contacts nobody: the profile it builds has no contacts
+            # and it has no phone line. It used to answer "I'm alerting your
+            # family right now. Stay calm, stay where you are." with
+            # "action": "alert_caregiver", and nothing was sent. Say what is
+            # true, report it in the data, and leave the alert to whoever reads
+            # this as a recommendation, by name.
             return _json_response({
                 "status": "crisis",
-                "response": (
-                    f"{name}, I hear you. I'm alerting your family right now. "
-                    "Stay calm, stay where you are. You're not alone."
-                ),
-                "action": "alert_caregiver",
+                "response": f"{name}, I hear you. {CANNOT_REACH_ANYONE}",
+                "caregiver_alerted": False,
+                "recommended_action": "alert_caregiver",
                 "severity": 0.9,
             })
 

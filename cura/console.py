@@ -24,6 +24,15 @@ from cura.privacy.scam_shield import ScamShield
 from cura.sensors.wearable import WearableAnalyzer
 
 
+#: What the console says when someone may be in trouble. The console has no way
+#: to reach anyone, so it says so, and names who can help.
+CANNOT_REACH_ANYONE = (
+    "I can't reach your family from here. This chat doesn't contact anyone. "
+    "If you need help now, please call 911, or call someone you trust. "
+    "I'll stay right here with you."
+)
+
+
 def _timestamp() -> str:
     return datetime.now().strftime("%I:%M %p")
 
@@ -113,8 +122,12 @@ def run_interactive(config: EldercarePulseConfig) -> None:
 
         # Check for distress
         if any(w in lower for w in ["help", "emergency", "hurt", "fall", "fell", "pain", "scared"]):
-            _cura_says(f"{name}, I hear you. I'm alerting your family right now. "
-                       "Stay calm, stay where you are. You're not alone.")
+            # The console contacts nobody: no phone line, no contacts, no
+            # escalation callback. It used to say "I'm alerting your family
+            # right now. Stay calm, stay where you are." Nothing was sent, and
+            # "stay where you are" told a person who had fallen to wait for help
+            # that was not coming. Say what is true, and who can help.
+            _cura_says(f"{name}, I hear you. {CANNOT_REACH_ANYONE}")
             continue
 
         # Medication questions
