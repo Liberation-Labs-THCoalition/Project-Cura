@@ -5,7 +5,10 @@ alerting your family right now. Stay calm, stay where you are. You're not
 alone." Neither can reach anyone: no phone line, no contacts, no escalation
 callback. Nobody was alerted, and "stay where you are" told someone who had
 fallen to wait for help that was not coming. The phone path closed this in
-cura/comms/responder.py::_promise_help; these two surfaces were missed.
+cura/comms/responder.py::_promise_help; these two surfaces were missed. Their
+scam branches made the same claim ("I'm flagging this for your family right
+away", "I'm going to let your family know"), with the alert kept in memory and
+sent nowhere.
 
 Each test drives the real entry point (`cura console` through cura.__main__,
 and the MCP server's own call_tool handler) with every sending primitive Cura
@@ -71,6 +74,8 @@ def _payload_claims_alert(payload: dict) -> list[str]:
         found.append('"action": "alert_caregiver"')
     if payload.get("caregiver_alerted") is True:
         found.append('"caregiver_alerted": true')
+    if payload.get("caregiver_notify"):
+        found.append('"caregiver_notify": true')
     return found
 
 
@@ -79,6 +84,12 @@ def _payload_claims_alert(payload: dict) -> list[str]:
 HISTORIC_FALSE_SENTENCES = [
     "Margaret, I hear you. I'm alerting your family right now. "
     "Stay calm, stay where you are. You're not alone.",
+    "I'm flagging this for your family right away. "
+    "You did absolutely the right thing telling me.",
+    "Thank you for telling me about that. You did the right thing. "
+    "I'm going to let your family know so they can help look into it. "
+    "Remember, it's never wrong to check with someone you trust before "
+    "giving out information or sending money.",
 ]
 
 
@@ -87,9 +98,21 @@ def test_the_detector_catches_each_sentence_that_was_said(sentence):
     assert _text_claims_alert(sentence), sentence
 
 
-def test_the_detector_passes_the_sentence_that_replaced_them():
+def test_the_detector_passes_the_sentences_that_replaced_them():
     from cura.console import CANNOT_REACH_ANYONE
+    from cura.privacy.scam_shield import ScamShield
     assert _text_claims_alert(CANNOT_REACH_ANYONE) == []
+    assert _text_claims_alert(ScamShield().get_reassurance()) == []
+
+
+def test_the_reassurance_claims_the_family_only_when_the_caller_says_so():
+    """The default claims nothing; family_told=True is the only way to the
+    family sentence, for a caller that really passed the report on."""
+    from cura.privacy.scam_shield import ScamShield
+    shield = ScamShield()
+    assert _text_claims_alert(shield.get_reassurance(family_told=False)) == []
+    assert _text_claims_alert(shield.get_reassurance(family_told=True))
+    assert shield.get_reassurance() == shield.get_reassurance(family_told=False)
 
 
 # --- Recording every way Cura can send ---------------------------------------
@@ -151,6 +174,26 @@ def test_the_console_claims_no_alert_it_did_not_send(said, sent, monkeypatch, ca
     assert "I hear you" in out, out          # the crisis branch answered
     if not sent:
         assert "911" in out, f"nothing was sent and no one to call was named:\n{out}"
+
+
+#: (what she says, whether the scam shield rates it 0.8 or more)
+SCAM_SAID = [
+    ("My grandson called and said he's in jail", False),
+    ("They want me to wire money today", True),
+    ("A man said I won a prize, buy a gift card and keep it between us", True),
+]
+
+
+@pytest.mark.parametrize("said,high", SCAM_SAID)
+def test_the_console_claims_no_scam_report_it_did_not_pass_on(said, high, sent,
+                                                              monkeypatch, capsys):
+    out = _console(monkeypatch, capsys, said)
+    claims = _text_claims_alert(out)
+    assert not claims or sent, f"claimed {claims} with nothing sent:\n{out}"
+    assert "right thing" in out, out         # the scam branch answered
+    if not sent:
+        assert "please tell them" in out, f"nothing was sent and she was not asked to tell anyone:\n{out}"
+    assert ("worries me" in out) is high, out
 
 
 # --- The MCP server, through its own call_tool handler ------------------------
@@ -226,3 +269,24 @@ def test_the_mcp_server_claims_no_alert_it_did_not_send(said, sent, mcp_call):
     assert payload["caregiver_alerted"] is bool(sent), payload
     if not sent:
         assert "911" in payload["response"], payload
+
+
+@pytest.mark.parametrize("said,high", SCAM_SAID)
+def test_the_mcp_ask_claims_no_scam_report_it_did_not_pass_on(said, high, sent, mcp_call):
+    payload = mcp_call("cura_ask", {"message": said})
+    assert payload["status"] == "scam_alert", payload
+    claims = _payload_claims_alert(payload)
+    assert not claims or sent, f"claimed {claims} with nothing sent: {payload}"
+    assert payload["caregiver_alerted"] is bool(sent), payload
+    assert payload["caregiver_should_be_told"] is high, payload
+    if not sent:
+        assert "please tell them" in payload["response"], payload
+
+
+@pytest.mark.parametrize("said,high", SCAM_SAID)
+def test_the_mcp_scam_check_claims_no_report_it_did_not_pass_on(said, high, sent, mcp_call):
+    payload = mcp_call("cura_scam_check", {"message": said})
+    assert payload["status"] == "alert", payload
+    claims = _payload_claims_alert(payload)
+    assert not claims or sent, f"claimed {claims} with nothing sent: {payload}"
+    assert payload["caregiver_alerted"] is bool(sent), payload

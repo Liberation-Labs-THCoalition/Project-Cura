@@ -114,10 +114,13 @@ def run_interactive(config: EldercarePulseConfig) -> None:
         # Check for scam indicators
         alert = scam_shield.analyze_response(response)
         if alert:
-            _cura_says(scam_shield.get_reassurance())
+            # The alert stays in this process and is gone when the chat ends;
+            # nobody is told. This used to add "I'm flagging this for your
+            # family right away" on top of a reassurance that said the same.
+            _cura_says(scam_shield.get_reassurance(family_told=False))
             if alert.severity >= 0.8:
-                _cura_says("I'm flagging this for your family right away. "
-                           "You did absolutely the right thing telling me.")
+                _cura_says("This one worries me, so please tell them today if "
+                           "you can. You did absolutely the right thing telling me.")
             continue
 
         # Check for distress

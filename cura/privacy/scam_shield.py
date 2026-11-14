@@ -187,13 +187,28 @@ class ScamShield:
             return "Tech support scam likely. Advise elder to hang up and not give remote access."
         return "Monitor situation. Discuss with caregiver at next check-in."
 
-    def get_reassurance(self) -> str:
-        """A reassuring message when an elder reports a suspicious contact."""
+    def get_reassurance(self, family_told: bool = False) -> str:
+        """A reassuring message when an elder reports a suspicious contact.
+
+        `family_told` is the caller's to say, because only the caller knows
+        whether it passed the report on. This always said "I'm going to let
+        your family know", and no caller told anyone: the console and the MCP
+        server keep the alert in memory and send nothing. Someone who believes
+        Cura has told her family does not tell them herself. So the default
+        claims nothing and asks her to tell them.
+        """
+        if family_told:
+            return (
+                "Thank you for telling me about that. You did the right thing. "
+                "I'm going to let your family know so they can help look into it. "
+                "Remember, it's never wrong to check with someone you trust before "
+                "giving out information or sending money."
+            )
         return (
             "Thank you for telling me about that. You did the right thing. "
-            "I'm going to let your family know so they can help look into it. "
-            "Remember, it's never wrong to check with someone you trust before "
-            "giving out information or sending money."
+            "I can't pass this on to your family myself, so please tell them, "
+            "or someone else you trust, before you give out any information "
+            "or send any money."
         )
 
     @property

@@ -264,16 +264,20 @@ def create_server(
                 category="concern",
                 source=context,
             )
+            # Nothing here tells the family (see the crisis branch below). The
+            # reassurance used to say "I'm going to let your family know", and
+            # "caregiver_notify" read as done; it was only a threshold.
             return _json_response({
                 "status": "scam_alert",
-                "response": scam_shield.get_reassurance(),
+                "response": scam_shield.get_reassurance(family_told=False),
                 "alert": {
                     "severity": alert.severity,
                     "type": alert.alert_type,
                     "keywords": alert.description,
                     "action": alert.recommended_action,
                 },
-                "caregiver_notify": alert.severity >= 0.8,
+                "caregiver_alerted": False,
+                "caregiver_should_be_told": alert.severity >= 0.8,
             })
 
         crisis_words = ["help", "emergency", "hurt", "fall", "fell", "pain", "scared"]
@@ -400,7 +404,8 @@ def create_server(
             "keywords_found": alert.description,
             "elder_statement": alert.elder_statement,
             "recommended_action": alert.recommended_action,
-            "reassurance": scam_shield.get_reassurance(),
+            "reassurance": scam_shield.get_reassurance(family_told=False),
+            "caregiver_alerted": False,
         })
 
     async def _handle_summary(args: dict) -> list[TextContent]:
