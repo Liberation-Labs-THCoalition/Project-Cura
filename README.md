@@ -164,7 +164,7 @@ When Margaret calls Cura:
 - Want to stop the calls? Tell your caregiver and they'll pause them.
 - Want to change when Cura calls? Your caregiver can adjust the times.
 
-**If someone asks you for money or personal information**, tell Cura about it during your next check-in. She'll help you figure out if it's a scam and let your family know.
+**If someone asks you for money or personal information**, tell Cura about it during your next check-in. She'll help you figure out if it's a scam. She can't pass it on to your family herself yet, so tell them too.
 
 **Cura will never:**
 - Ask for your bank account or Social Security number

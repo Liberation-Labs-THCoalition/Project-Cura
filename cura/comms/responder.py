@@ -126,6 +126,38 @@ class CuraResponder:
                 "If you need help, please hang up and dial nine one one. "
                 "I'm going to stay on the line with you.")
 
+    def _scam_reply(self, transcript: str) -> str:
+        """Return what Cura may truthfully say after she reports a scam.
+
+        Cura said "I'm going to let your family know so they can help look into
+        it" whatever happened. Production builds the responder with
+        on_help_requested only (__main__._build_responder), so on_scam_report
+        was None and the report went nowhere. Someone who believes Cura told
+        her family does not tell them herself.
+
+        Same rule as _promise_help: the callback's verdict decides. False or an
+        exception: not passed on, and Cura asks her to tell them. None or
+        anything else: passed on, or under way.
+        """
+        passed_on = False
+        if self._on_scam:
+            try:
+                passed_on = self._on_scam(transcript) is not False
+            except Exception:
+                logger.exception("SCAM REPORT CALLBACK RAISED. Nobody can be "
+                                 "assumed told.")
+        else:
+            logger.warning("SCAM REPORTED WITH NO CALLBACK WIRED. Nobody was "
+                           "told; Cura asked her to tell her family herself.")
+        if passed_on:
+            return ("Thank you for telling me about that. You did the right thing. "
+                    "I'm going to let your family know so they can help look into it. "
+                    "Remember, it's never wrong to check with someone you trust.")
+        return ("Thank you for telling me about that. You did the right thing. "
+                "I can't pass this on to your family myself, so please tell them, "
+                "or someone else you trust, before you give out any information "
+                "or send any money.")
+
     def handle_dtmf(self, digit: str, call_context: str = "checkin") -> dict[str, str]:
         """Handle a keypad press during a call.
 
@@ -210,13 +242,9 @@ class CuraResponder:
             "someone called", "asked for money", "gift card", "wire",
             "scam", "suspicious", "weird call", "strange email",
         ]):
-            if self._on_scam:
-                self._on_scam(transcript)
             return {
                 "action": "scam_report",
-                "say": "Thank you for telling me about that. You did the right thing. "
-                       "I'm going to let your family know so they can help look into it. "
-                       "Remember, it's never wrong to check with someone you trust.",
+                "say": self._scam_reply(transcript),
             }
 
         # ONLY after help and scam have declined. A pending question must never

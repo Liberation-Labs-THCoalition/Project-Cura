@@ -164,7 +164,7 @@ Cuando Margaret llama a Cura:
 - ¿Quiere dejar de recibir las llamadas? Dígale a su cuidador/a y las pausará.
 - ¿Quiere cambiar la hora en que Cura llama? Su cuidador/a puede ajustar los horarios.
 
-**Si alguien le pide dinero o información personal**, cuénteselo a Cura durante su siguiente llamada. Ella le ayudará a saber si es una estafa y le avisará a su familia.
+**Si alguien le pide dinero o información personal**, cuénteselo a Cura durante su siguiente llamada. Ella le ayudará a saber si es una estafa. Todavía no puede avisarle a su familia por su cuenta, así que cuénteselo también a ellos.
 
 **Cura nunca va a:**
 - Pedirle su número de cuenta bancaria o de Seguro Social

@@ -8,7 +8,8 @@ fallen to wait for help that was not coming. The phone path closed this in
 cura/comms/responder.py::_promise_help; these two surfaces were missed. Their
 scam branches made the same claim ("I'm flagging this for your family right
 away", "I'm going to let your family know"), with the alert kept in memory and
-sent nowhere.
+sent nowhere. So did the phone: production wires no scam callback, and the
+responder still said "I'm going to let your family know"; so did the README.
 
 Each test drives the real entry point (`cura console` through cura.__main__,
 and the MCP server's own call_tool handler) with every sending primitive Cura
@@ -90,6 +91,9 @@ HISTORIC_FALSE_SENTENCES = [
     "I'm going to let your family know so they can help look into it. "
     "Remember, it's never wrong to check with someone you trust before "
     "giving out information or sending money.",
+    "Thank you for telling me about that. You did the right thing. "
+    "I'm going to let your family know so they can help look into it. "
+    "Remember, it's never wrong to check with someone you trust.",
 ]
 
 
@@ -119,14 +123,18 @@ def test_the_reassurance_claims_the_family_only_when_the_caller_says_so():
 
 @pytest.fixture
 def sent(monkeypatch):
-    """Replace every primitive that reaches a person with a recorder."""
-    log: list[str] = []
-    from cura.comms import voice as voice_mod, ladder, escalation
+    """Replace every primitive that reaches a person with a recorder.
 
-    def _rec(label, result=None):
+    The leaves, not the builders: both escalation callbacks end in a CuraVoice
+    method or ladder.climb, and a builder left real lets the production
+    responder be built as `cura webhook` builds it."""
+    log: list[str] = []
+    from cura.comms import voice as voice_mod, ladder
+
+    def _rec(label):
         def f(*a, **k):
             log.append(label)
-            return result
+            return None
         return f
 
     def _arec(label):
@@ -139,9 +147,6 @@ def sent(monkeypatch):
                  "morning_checkin", "evening_checkin"):
         monkeypatch.setattr(voice_mod.CuraVoice, meth, _arec(f"CuraVoice.{meth}"))
     monkeypatch.setattr(ladder, "climb", _rec("ladder.climb"))
-    monkeypatch.setattr(escalation, "build_escalation", _rec("build_escalation"))
-    monkeypatch.setattr(escalation, "build_ladder_escalation",
-                        _rec("build_ladder_escalation"))
     return log
 
 
@@ -290,3 +295,92 @@ def test_the_mcp_scam_check_claims_no_report_it_did_not_pass_on(said, high, sent
     claims = _payload_claims_alert(payload)
     assert not claims or sent, f"claimed {claims} with nothing sent: {payload}"
     assert payload["caregiver_alerted"] is bool(sent), payload
+
+
+# --- The phone, as `cura webhook` builds it ------------------------------------
+
+#: Scam reports the responder hears; none contains a help word, which wins first.
+PHONE_SCAM_SAID = [
+    "Someone called and asked for my bank number",
+    "A man wants me to buy a gift card",
+    "I got a weird call about my Medicare",
+    "I think that email was a scam",
+]
+
+
+def _production_responder(tmp_path):
+    from cura.__main__ import _build_responder
+    from tests.test_production_seam import _wizard_config
+    return _build_responder(str(_wizard_config(tmp_path)))
+
+
+@pytest.mark.parametrize("context", ["checkin", "evening", "inbound"])
+@pytest.mark.parametrize("said", PHONE_SCAM_SAID)
+def test_the_phone_claims_no_scam_report_it_did_not_pass_on(said, context, sent, tmp_path):
+    out = _production_responder(tmp_path).handle_speech(said, context)
+    assert out["action"] == "scam_report", out
+    claims = _text_claims_alert(out["say"])
+    assert not claims or sent, f"claimed {claims} with nothing sent: {out}"
+    if not sent:
+        assert "please tell them" in out["say"], out
+
+
+def test_the_webhook_speaks_the_truth_about_a_scam_report(sent, tmp_path):
+    """The sentence that reaches the caller's ear, through the signed route."""
+    import html
+    from twilio.request_validator import RequestValidator
+    from cura.comms.webhook import create_app
+    token, base = "test-token-not-a-secret", "https://cura.test"
+    form = {"SpeechResult": "Someone called and asked for money"}
+    app = create_app(responder=_production_responder(tmp_path),
+                     elder_name="Margaret", auth_token=token, public_url=base)
+    sig = RequestValidator(token).compute_signature(base + "/voice/checkin-response", form)
+    r = app.test_client().post("/voice/checkin-response", data=form,
+                               headers={"X-Twilio-Signature": sig})
+    body = html.unescape(r.get_data(as_text=True))   # TwiML escapes the apostrophes
+    assert r.status_code == 200, body[:200]
+    claims = _text_claims_alert(body)
+    assert not claims or sent, f"claimed {claims} with nothing sent: {body}"
+    assert "please tell them" in body, body
+
+
+def _raise(transcript):
+    raise RuntimeError("provider down")
+
+
+@pytest.mark.parametrize("callback", [None, lambda t: False, _raise],
+                         ids=["no-callback", "not-passed-on", "raised"])
+def test_the_phone_asks_her_to_tell_them_when_the_report_went_nowhere(callback):
+    from cura.comms.responder import CuraResponder
+    say = CuraResponder(on_scam_report=callback).handle_speech(
+        "Someone called asking for gift cards")["say"]
+    assert _text_claims_alert(say) == [], say
+    assert "please tell them" in say, say
+
+
+@pytest.mark.parametrize("verdict", [True, None], ids=["passed-on", "under-way"])
+def test_the_phone_says_it_told_the_family_when_the_callback_did(verdict):
+    from cura.comms.responder import CuraResponder
+    heard = []
+
+    def cb(transcript):
+        heard.append(transcript)
+        return verdict
+    say = CuraResponder(on_scam_report=cb).handle_speech(
+        "Someone called asking for gift cards")["say"]
+    assert heard, "the callback was never given the report"
+    assert "let your family know" in say, say
+
+
+@pytest.mark.parametrize("readme,opening,promise", [
+    ("README.md", "**If someone asks you for money", "let your family know"),
+    ("README.es.md", "**Si alguien le pide dinero", "le avisará a su familia"),
+])
+def test_the_readme_promises_the_family_only_if_production_tells_them(
+        readme, opening, promise, tmp_path):
+    """The README told an elder Cura would "let your family know" about a scam.
+    Production wires no scam callback, so it did not."""
+    lines = [l for l in (ROOT / readme).read_text().splitlines() if l.startswith(opening)]
+    assert len(lines) == 1, f"{readme}: the scam paragraph moved; find it again"
+    if _production_responder(tmp_path)._on_scam is None:
+        assert promise not in lines[0], lines[0]
