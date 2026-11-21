@@ -101,6 +101,16 @@ SUSPICIOUS_URL_PATTERNS = [
 ]
 
 
+_DOMAIN_IN_TEXT = re.compile(
+    r"(?:https?://)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?:[/\s]|$)", re.I)
+
+
+def _domain_in(text: str) -> str:
+    """The domain a link's visible text shows, if it shows one."""
+    m = _DOMAIN_IN_TEXT.search((text or "").strip() + " ")
+    return m.group(1).lower() if m else ""
+
+
 class MessageScanner:
     """Scan incoming messages for fraud indicators.
 
@@ -121,10 +131,19 @@ class MessageScanner:
         subject: str,
         body: str,
         headers: dict[str, str] | None = None,
+        links: list[tuple[str, str]] | None = None,
+        display_name: str = "",
     ) -> MessageVerdict:
         """Scan an email for fraud indicators.
 
         Content (body) is analyzed but NEVER stored.
+
+        `links` are (the text she sees, where it really goes) pairs, and
+        `display_name` is the name shown in front of the address; both come
+        from cura/privacy/email_intake.py, which reads a real message. A link
+        that shows one address and goes to another, and a "Medicare" name in
+        front of someone else's address, are the two tricks a raw-text scan
+        cannot see.
         """
         now = datetime.now(timezone.utc)
         indicators = []
@@ -155,6 +174,49 @@ class MessageScanner:
             if not dkim:
                 indicators.append("No DKIM signature — authenticity unverified")
                 provenance["dkim"] = "missing"
+
+            # What her own mail server concluded (RFC 8601). A real message
+            # carries this; the provider's verdict outranks our guesses.
+            auth = headers.get("Authentication-Results", "").lower()
+            for check in ("spf", "dkim", "dmarc"):
+                m = re.search(rf"\b{check}\s*=\s*(\w+)", auth)
+                if m:
+                    provenance[f"auth_{check}"] = m.group(1)
+                    if m.group(1) in ("fail", "softfail", "permerror"):
+                        indicators.append(
+                            f"{check.upper()} check FAILED at her mail server — "
+                            "sender may be spoofed")
+
+            reply_to = headers.get("Reply-To", "")
+            if reply_to and "@" in reply_to and sender_domain:
+                reply_domain = reply_to.rsplit("@", 1)[-1].strip(" >").lower()
+                if reply_domain and reply_domain != sender_domain:
+                    indicators.append(
+                        f"Replies go to {reply_domain}, not {sender_domain}")
+                    provenance["reply_to_mismatch"] = True
+
+        # 1b. A trusted name in front of someone else's address.
+        if display_name:
+            shown = display_name.lower()
+            for claim, real_domain in (("medicare", "medicare.gov"),
+                                       ("social security", "ssa.gov"),
+                                       ("irs", "irs.gov"), ("amazon", "amazon.com"),
+                                       ("apple", "apple.com"), ("paypal", "paypal.com")):
+                if re.search(rf"\b{claim}\b", shown) and not (
+                        sender_domain == real_domain
+                        or sender_domain.endswith("." + real_domain)):
+                    indicators.append(
+                        f"Name says {claim} but the address is {sender_domain or 'missing'}")
+                    break
+
+        # 1c. A link that shows one address and goes to another.
+        for text, href in links or []:
+            shown_domain = _domain_in(text)
+            real = urlparse(href).netloc.lower().split(":")[0]
+            if shown_domain and real and not (
+                    real == shown_domain or real.endswith("." + shown_domain)):
+                indicators.append(f"A link shows {shown_domain} but goes to {real}")
+                break
 
         # 3. Subject line analysis
         subject_lower = subject.lower()
@@ -210,6 +272,8 @@ class MessageScanner:
         risk_score = min(1.0, len(indicators) * 0.2)
         if any("SPF" in i or "spoofed" in i for i in indicators):
             risk_score = max(risk_score, 0.7)
+        if any(i.startswith("A link shows") for i in indicators):
+            risk_score = max(risk_score, 0.7)
         if any("Money transfer" in i for i in indicators):
             risk_score = max(risk_score, 0.8)
 
@@ -221,7 +285,10 @@ class MessageScanner:
 
         action = ""
         if risk_level == "dangerous":
-            action = "DO NOT click any links or reply. This is likely a scam. Cura will alert your caregiver."
+            # It said "Cura will alert your caregiver." Nothing calls this
+            # scanner on a path that alerts anyone (Lane cura-critical, 11-21).
+            action = ("Don't click any links or reply. This is likely a scam. "
+                      "Please show it to someone you trust before you do anything.")
         elif risk_level == "suspicious":
             action = "Be cautious. Don't click links or share personal information. Ask Cura if you're unsure."
 
@@ -298,12 +365,15 @@ class MessageScanner:
         if not dangerous and not suspicious:
             return "No suspicious messages detected today."
 
+        # It said "blocked" and "Details in the caregiver dashboard." Cura
+        # blocks no message, and cura/dashboard/ is empty.
         parts = []
         if dangerous:
-            parts.append(f"{len(dangerous)} dangerous message(s) blocked")
+            parts.append(f"{len(dangerous)} dangerous message(s) flagged")
         if suspicious:
             parts.append(f"{len(suspicious)} suspicious message(s) flagged")
-        return "; ".join(parts) + ". Details in the caregiver dashboard."
+        return ("; ".join(parts) + ". Cura does not block email or pass these "
+                "on; ask her about them.")
 
     @property
     def verdicts(self) -> list[MessageVerdict]:

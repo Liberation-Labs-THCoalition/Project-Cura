@@ -48,7 +48,7 @@ cura/
   dashboard/   Family/caregiver web dashboard
   memory/      Elder profile, pattern history, medication tracking
 config/        VALUES.json templates for eldercare
-tests/         Test suite (919 tests)
+tests/         Test suite (932 tests)
 docs/          Architecture spec, regulatory notes
 ```
 
@@ -58,7 +58,9 @@ No sensors, no app, no PWA. Just phone calls and texts.
 - Morning + evening check-in calls via Twilio
 - SMS medication reminders
 - Daily enrichments (hydration, nutrition, weather, cognitive exercises, pet care, movement, reading)
-- Scam defense (education tips, screening questions, keyword detection, email provenance scanning)
+- Scam defense (education tips, screening questions, keyword detection, email provenance scanning of one message
+  at a time: `cura scan-email FILE` and MCP `cura_scam_check` with `email`. Watching her inbox is planned, not
+  built: docs/EMAIL_SCOPE_PLAN.md)
 - Caregiver burnout check-ins (weekly)
 - Home safety assessment (periodic questions over several weeks)
 - Benefits guidance (conversational)
@@ -102,5 +104,5 @@ cd /home/asdf/Project-Cura
 # they had simply never run. A suite whose answer depends on which python is
 # on PATH is a suite that can report anything.
 #   .venv/bin/pip install -e '.[test]'    # if pytest is missing
-# Expected: 919 passed.
+# Expected: 932 passed.
 ```

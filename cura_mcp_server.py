@@ -189,8 +189,16 @@ def create_server(
                             "type": "string",
                             "description": "The message or transcript to analyze",
                         },
+                        "email": {
+                            "type": "string",
+                            "description": (
+                                "Optional: one whole email as raw RFC 822 text "
+                                "(a mail client's 'Show original'). Checked for "
+                                "where it really came from and where its links "
+                                "really go. Read in memory; only the verdict is "
+                                "kept, and nobody is told."),
+                        },
                     },
-                    "required": ["message"],
                 },
             ),
             Tool(
@@ -394,6 +402,29 @@ def create_server(
         })
 
     async def _handle_scam_check(args: dict) -> list[TextContent]:
+        if args.get("email"):
+            # Thomas, 2026-11-17: "Let's also make sure email is included and
+            # scanned". The provenance scanner had no caller; this is one
+            # (docs/EMAIL_SCOPE_PLAN.md, E1). Nothing here tells anyone.
+            from cura.privacy.email_intake import plain_words, scan_raw_email
+            try:
+                verdict = scan_raw_email(args["email"])
+            except ValueError as e:
+                return _json_response({"status": "not_an_email", "error": str(e),
+                                       "caregiver_alerted": False})
+            return _json_response({
+                "status": "clean" if verdict.risk_level == "safe" else "alert",
+                "scam_detected": verdict.risk_level != "safe",
+                "source": "email",
+                "risk_level": verdict.risk_level,
+                "risk_score": verdict.risk_score,
+                "sender_domain": verdict.sender,
+                "indicators": verdict.indicators,
+                "provenance": verdict.provenance,
+                "recommended_action": verdict.recommended_action,
+                "reassurance": plain_words(verdict),
+                "caregiver_alerted": False,
+            })
         message = args.get("message", "")
         alert = scam_shield.analyze_response(message)
 
