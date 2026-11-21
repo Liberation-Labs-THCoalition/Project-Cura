@@ -106,8 +106,11 @@ def test_a_real_medicare_notice_is_safe():
 
 def test_something_that_is_not_an_email_is_refused_not_called_safe():
     from cura.privacy.email_intake import scan_raw_email
-    with pytest.raises(ValueError):
-        scan_raw_email(b"just some words, no headers at all")
+    try:
+        v = scan_raw_email(b"just some words, no headers at all")
+    except ValueError:
+        return
+    assert False, f"a non-email was scanned and called {v.risk_level!r}"
 
 
 # --- 2 and 3. Through the real entry points ------------------------------------

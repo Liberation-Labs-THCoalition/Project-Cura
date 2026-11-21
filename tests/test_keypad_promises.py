@@ -336,6 +336,10 @@ def test_after_a_help_request_she_hears_only_what_was_done(reached, tmp_path, la
             continue
         helped += 1
         text = " ".join(t for t, _, _ in said)
+        # The call ends after a help reply: a line Cura holds is one the family
+        # cannot call back on, and the one she needs free to dial 911.
+        assert not any(g for _, g, _ in said), (
+            f"{path} {what}: after a help request the call stays open: {text!r}")
         assert not _ARRIVING.search(text), f"{path} {what}: promised arrival: {text!r}"
         if not reached:
             assert "nine one one" in text, f"{path} {what}: nobody reached, no 911: {text!r}"
