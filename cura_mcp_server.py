@@ -257,29 +257,10 @@ def create_server(
         lower = message.lower()
         name = profile.display_name
 
-        alert = scam_shield.analyze_response(message)
-        if alert:
-            memory.add_observation(
-                content=f"Scam indicator detected: {alert.description}",
-                category="concern",
-                source=context,
-            )
-            # Nothing here tells the family (see the crisis branch below). The
-            # reassurance used to say "I'm going to let your family know", and
-            # "caregiver_notify" read as done; it was only a threshold.
-            return _json_response({
-                "status": "scam_alert",
-                "response": scam_shield.get_reassurance(family_told=False),
-                "alert": {
-                    "severity": alert.severity,
-                    "type": alert.alert_type,
-                    "keywords": alert.description,
-                    "action": alert.recommended_action,
-                },
-                "caregiver_alerted": False,
-                "caregiver_should_be_told": alert.severity >= 0.8,
-            })
-
+        # Crisis words before scam words, as the phone path does. Scam words
+        # came first, so "I fell and I'm in trouble" ("in trouble" is a scam
+        # keyword) got the scam reply, which never mentions 911 (batch 11
+        # verifier, MEDIUM).
         crisis_words = ["help", "emergency", "hurt", "fall", "fell", "pain", "scared"]
         if any(w in lower for w in crisis_words):
             memory.add_observation(
@@ -300,6 +281,29 @@ def create_server(
                 "caregiver_alerted": False,
                 "recommended_action": "alert_caregiver",
                 "severity": 0.9,
+            })
+
+        alert = scam_shield.analyze_response(message)
+        if alert:
+            memory.add_observation(
+                content=f"Scam indicator detected: {alert.description}",
+                category="concern",
+                source=context,
+            )
+            # Nothing here tells the family (see the crisis branch above). The
+            # reassurance used to say "I'm going to let your family know", and
+            # "caregiver_notify" read as done; it was only a threshold.
+            return _json_response({
+                "status": "scam_alert",
+                "response": scam_shield.get_reassurance(family_told=False),
+                "alert": {
+                    "severity": alert.severity,
+                    "type": alert.alert_type,
+                    "keywords": alert.description,
+                    "action": alert.recommended_action,
+                },
+                "caregiver_alerted": False,
+                "caregiver_should_be_told": alert.severity >= 0.8,
             })
 
         med_words = ["medication", "medicine", "pill", "pills", "prescription"]
@@ -359,10 +363,14 @@ def create_server(
         time_of_day = args.get("time_of_day", "morning")
         weather = args.get("weather")
 
+        # keypad=False: this server has no keypad and contacts nobody, so the
+        # script ends with a line that offers no key and promises no call. It
+        # ended "press two and I'll call your family", and "2" sent to cura_ask
+        # got small talk (batch 11 verifier, HIGH).
         if time_of_day == "evening":
-            checkin = composer.compose_evening(pulse, weather=weather)
+            checkin = composer.compose_evening(pulse, weather=weather, keypad=False)
         else:
-            checkin = composer.compose_morning(pulse, weather=weather)
+            checkin = composer.compose_morning(pulse, weather=weather, keypad=False)
 
         enrichment_data = []
         for e in checkin.enrichments:

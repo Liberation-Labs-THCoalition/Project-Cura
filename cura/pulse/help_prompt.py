@@ -72,6 +72,19 @@ _PLAYFUL = (
 )
 
 
+#: The help line for a surface with no keypad and no way to call anyone: the
+#: MCP server's cura_checkin and the console demo. Not Thomas's press-two line,
+#: which needs a keypad and a ladder behind it; CC's wording (Lane
+#: cura-critical, 2026-11-21). The MCP check-in ended "press two and I'll call
+#: your family" on a server with no keypad that contacts nobody (batch 11
+#: verifier, HIGH), and `cura console --demo` printed it for a profile with no
+#: phone and no contacts (MEDIUM).
+NO_KEYPAD_HELP_LINE = (
+    "If you ever need help, please call 911, or call someone you trust. "
+    "I can't call anyone for you from here."
+)
+
+
 def help_prompt(days_heard: int, *, inbound: bool = False,
                 rotation: int = 0) -> HelpPrompt | None:
     """The line to close a check-in with, or None when it must not be said.

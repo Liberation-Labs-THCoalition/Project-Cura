@@ -131,7 +131,12 @@ class DailySummary:
                 parts.append(f"  ⚠ {c}")
 
         if self.scam_alerts:
-            parts.append(f"\nSCAM DEFENSE: {self.scam_alerts} suspicious contact(s) flagged and handled")
+            # Not "flagged and handled": nothing acts on a flagged contact, and
+            # a caregiver who reads "handled" has no reason to follow up
+            # (batch 11 verifier, MEDIUM).
+            parts.append(f"\nSCAM DEFENSE: {self.scam_alerts} suspicious contact(s) mentioned. "
+                         f"Cura has not acted on them or passed them on, so please "
+                         f"ask {self.elder_name} about them.")
 
         parts.append(f"\n— Cura")
         return "\n".join(parts)

@@ -34,25 +34,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # --- What counts as a claim -------------------------------------------------
 
-#: A first-person promise that someone is being, or will be, told or sent for.
+#: Who a claim can say was told or sent for. Widened 11-21: the batch 11
+#: verifier put "I'm calling 911 for you now" and "Your daughter has been
+#: notified" on the fixed lines and the suite passed.
+_WHO = (r"(?:family|caregiver|daughter|son|wife|husband|people|someone|anyone|help|"
+        r"911|nine one one|an ambulance|emergency services|the police|paramedics)")
+#: A first-person promise that someone is being, will be, or has been told or
+#: sent for ("I'm alerting", "I'll call", "I've let", "I told").
 _FIRST_PERSON = re.compile(
-    r"\bI(?:'m| am|'ll| will)(?: going to)?\s+(?:\w+\s+)?"
-    r"(?:alert|flag|let|tell|contact|notify|call|ring|reach|text|messag|send|pass|get)\w*\b"
-    r"[^.!?]*\b(?:family|caregiver|daughter|son|someone|anyone|help)\b",
+    r"\bI(?:'m| am|'ll| will|'ve| have)?(?: going to| just)?\s+(?:\w+\s+)?"
+    r"(?:alert|flag|let|tell|told|contact|notif|call|ring|rang|reach|text|messag|"
+    r"send|sent|pass|get|got)\w*\b"
+    rf"[^.!?]*\b{_WHO}\b",
     re.IGNORECASE)
-#: The same promise in the passive voice.
+#: The same promise in the passive voice ("Your daughter has been notified").
 _PASSIVE = re.compile(
-    r"\b(?:family|caregiver)\b[^.!?]*\b(?:is|are|has been|have been|will be)\s+"
-    r"(?:being\s+)?(?:alerted|told|notified|contacted|called|flagged|informed)\b",
+    r"\b(?:family|caregiver|daughter|son|wife|husband|people)\b[^.!?]*\b"
+    r"(?:is|are|was|were|has been|have been|will be)\s+"
+    r"(?:being\s+)?(?:alerted|told|notified|contacted|called|flagged|informed|sent for)\b",
     re.IGNORECASE)
-#: Words that only make sense if someone is on the way.
+#: Words that only make sense if someone is on the way ("Help is on its way").
 _ARRIVING = re.compile(
-    r"help is (?:on the way|coming)|someone will (?:check on|come)|stay where you are",
+    r"help is (?:on (?:the|its) way|coming)|someone will (?:check on|come)|"
+    r"stay where you are|(?:is|are) on (?:the|its|their|her|his) way",
     re.IGNORECASE)
+#: The press-two line's present-tense forms ("That reaches your family",
+#: "two gets your family"): true only where a key and a ladder exist.
+_REACHES = re.compile(
+    r"\b(?:that|two|it|this)\s+(?:reaches|gets|rings|calls)\s+your\s+(?:family|people)\b",
+    re.IGNORECASE)
+#: Something was done about it ("flagged and handled").
+_HANDLED = re.compile(r"\bflagged and handled\b|\bhas been handled\b|\btaken care of\b",
+                      re.IGNORECASE)
 
 
 def _text_claims_alert(text: str) -> list[str]:
-    return [m.group(0) for p in (_FIRST_PERSON, _PASSIVE, _ARRIVING)
+    return [m.group(0) for p in (_FIRST_PERSON, _PASSIVE, _ARRIVING, _REACHES, _HANDLED)
             for m in p.finditer(text)]
 
 
@@ -97,9 +114,34 @@ HISTORIC_FALSE_SENTENCES = [
 ]
 
 
-@pytest.mark.parametrize("sentence", HISTORIC_FALSE_SENTENCES)
+#: False claims the batch 11 verifier put on the fixed lines; all five passed the
+#: suite (857 passed) before the detector was widened. Plus the press-two
+#: line's forms the detector missed, and the summary's "handled".
+VERIFIER_SURVIVORS = [
+    "Margaret, I hear you. I've let your family know.",
+    "Margaret, I hear you. I'm calling 911 for you now.",
+    "Your daughter has been notified.",
+    "Help is on its way.",
+    "Thank you for telling me about that. I've told your family, but please tell them too.",
+    "And if you need anything at all, press two. That reaches your family.",
+    "And the usual: two gets your family.",
+    "If you ever need help, press two and I'll call your family.",
+    "Same as always, press two and I'll call your people.",
+    "SCAM DEFENSE: 1 suspicious contact(s) flagged and handled",
+]
+
+
+@pytest.mark.parametrize("sentence", HISTORIC_FALSE_SENTENCES + VERIFIER_SURVIVORS)
 def test_the_detector_catches_each_sentence_that_was_said(sentence):
     assert _text_claims_alert(sentence), sentence
+
+
+def test_the_detector_passes_the_honest_lines_that_name_who_to_call():
+    """Telling her to call 911 is not a claim that Cura did."""
+    from cura.comms.responder import CANNOT_REACH_ANYONE as PHONE
+    from cura.pulse.help_prompt import NO_KEYPAD_HELP_LINE
+    for line in (PHONE, NO_KEYPAD_HELP_LINE):
+        assert _text_claims_alert(line) == [], line
 
 
 def test_the_detector_passes_the_sentences_that_replaced_them():
@@ -384,3 +426,83 @@ def test_the_readme_promises_the_family_only_if_production_tells_them(
     assert len(lines) == 1, f"{readme}: the scam paragraph moved; find it again"
     if _production_responder(tmp_path)._on_scam is None:
         assert promise not in lines[0], lines[0]
+
+
+# --- Surfaces with no keypad: the MCP check-in and the console demo -----------
+
+def _offers_a_key(text: str) -> bool:
+    from tests.test_keypad_promises import _keys_named
+    return bool(_keys_named(text)) or "press" in text.lower()
+
+
+@pytest.mark.parametrize("time_of_day", ["morning", "evening"])
+def test_the_mcp_checkin_offers_no_key_and_promises_no_call(time_of_day, sent, mcp_call):
+    """Every cura_checkin script ended "press two and I'll call your family" on
+    a server with no keypad that contacts nobody (batch 11 verifier, HIGH)."""
+    for _ in range(6):        # the composer varies what it picks; ask several times
+        payload = mcp_call("cura_checkin", {"time_of_day": time_of_day})
+        lines = payload["all_messages"]
+        claims = _payload_claims_alert(payload)
+        assert not claims or sent, f"claimed {claims} with nothing sent: {lines}"
+        offered = [l for l in lines if _offers_a_key(l)]
+        assert not offered, f"a keypad-less server offers a key: {offered}"
+        assert "911" in lines[-1], f"the script never says who to call for help: {lines}"
+
+
+def _demo(monkeypatch, capsys) -> tuple[list[str], str]:
+    monkeypatch.setattr(sys, "argv", ["cura", "console", "--name", "Margaret", "--demo"])
+    from cura.__main__ import main
+    main()
+    out = capsys.readouterr().out
+    said = [l.split("Cura:", 1)[1].strip() for l in out.splitlines() if "Cura:" in l]
+    return said, out
+
+
+def test_the_console_demo_promises_no_call_in_curas_voice(sent, monkeypatch, capsys):
+    """`cura console --demo` printed "If you ever need help, press two and I'll
+    call your family" for a profile with no phone and no contacts (MEDIUM)."""
+    said, out = _demo(monkeypatch, capsys)
+    assert said, out
+    claims = [c for line in said for c in _text_claims_alert(line)]
+    assert not claims or sent, f"claimed {claims} with nothing sent:\n{out}"
+    offered = [l for l in said if _offers_a_key(l)]
+    assert not offered, f"the console offers a key it cannot hear: {offered}"
+    assert "This demo calls nobody" in out, out
+
+
+def test_the_console_demo_still_tells_the_reader_about_two(monkeypatch, capsys):
+    """The phone's help line is described, not dropped: a caregiver watching the
+    demo learns that the real call tells her to press two."""
+    _, out = _demo(monkeypatch, capsys)
+    assert "press" in out.lower() and "two for her family" in out, out
+
+
+# --- Crisis words before scam words, as the phone does ------------------------
+
+#: Each holds a scam keyword ("in trouble", "irs", "arrest") and a crisis word.
+BOTH_SAID = ["I fell and I am in trouble", "help, the IRS says they will arrest me"]
+
+
+@pytest.mark.parametrize("said", BOTH_SAID)
+def test_the_console_answers_distress_before_a_scam_word(said, sent, monkeypatch, capsys):
+    out = _console(monkeypatch, capsys, said)
+    assert "911" in out, f"a fall with a scam word got no 911:\n{out}"
+
+
+@pytest.mark.parametrize("said", BOTH_SAID)
+def test_the_mcp_server_answers_distress_before_a_scam_word(said, sent, mcp_call):
+    payload = mcp_call("cura_ask", {"message": said})
+    assert payload["status"] == "crisis", payload
+    assert "911" in payload["response"], payload
+
+
+# --- The caregiver summary -------------------------------------------------------
+
+@pytest.mark.parametrize("fmt", ["detailed", "sms"])
+def test_the_summary_says_no_scam_report_was_handled(fmt, sent, mcp_call):
+    """The detailed summary said "flagged and handled". Nothing handles them."""
+    mcp_call("cura_ask", {"message": "They want me to wire money today"})
+    payload = mcp_call("cura_summary", {"format": fmt})
+    assert payload["scam_alerts"] == 1, payload
+    claims = _text_claims_alert(payload["formatted"])
+    assert not claims or sent, f"claimed {claims} with nothing sent: {payload['formatted']}"
