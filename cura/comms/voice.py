@@ -347,14 +347,20 @@ class CuraVoice:
                 med_names = [m.get("name") for m in evening_meds]
                 messages.append(f"Time for your evening medication — {', '.join(med_names)}.")
 
-        messages.append("Is there anything you need before bed? Press 1 for yes, or 2 for no.")
+        # Not on `cura run`'s path (that composes with CheckinComposer), but
+        # callable, so it must agree with the route it posts to. It said "Press
+        # 1 for yes, or 2 for no" and posted to /voice/checkin-response, where 1
+        # records her medication as taken and 2 calls the family: "yes, I need
+        # something" became a dose, and "no" became an emergency.
+        messages.append("Is there anything you need before bed? "
+                        "If there is, press two, and I'll call your family.")
 
         elder_phone = getattr(profile, 'phone', '')
         return await self.call(
             to_number=elder_phone,
             messages=messages,
             gather_response=True,
-            gather_action="/voice/checkin-response",
+            gather_action="/voice/evening-response",
         )
 
     async def alert_caregiver(
@@ -376,7 +382,12 @@ class CuraVoice:
             f"Hello {caregiver_name}, this is Cura, {elder_name}'s care companion.",
             f"I'm calling because {details}.",
             f"{elder_name} is at {profile.address}." if profile.address else "",
-            "Please check in when you can. Press 1 to confirm you received this message.",
+            # It said "Press 1 to confirm you received this message" and posted
+            # the key to /voice/checkin-response, the ELDER's morning route,
+            # where 1 records her medication as taken. Nothing confirms receipt
+            # (no caregiver route exists), so the caregiver is not asked to
+            # press anything.
+            f"Please check on {elder_name} when you can.",
         ]
         call_messages = [m for m in call_messages if m]
 
@@ -389,8 +400,6 @@ class CuraVoice:
         call_result = await self.call(
             to_number=caregiver_phone,
             messages=call_messages,
-            gather_response=True,
-            gather_action="/voice/checkin-response",
         )
         sms_result = await self.send_sms(caregiver_phone, sms_text)
 

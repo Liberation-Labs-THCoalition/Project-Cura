@@ -51,6 +51,21 @@ def _gather(text: str, action_path: str, input_type: str = "dtmf speech") -> str
     )
 
 
+def _reply(result: dict, path: str) -> str:
+    """The TwiML for a responder result, so the words and the call agree.
+
+    A reply that invites a key ("listen") is said inside a <Gather> posting back
+    to the route that heard it, or the key she presses next goes nowhere: the
+    unknown-digit reply said "Press 1 for yes or 2 for no. Press 9 to hear the
+    message again." and the call hung up before she could. Every other reply,
+    a help request above all, is said and the call ends, which frees her line
+    for the family calling back or for 911.
+    """
+    if result.get("listen"):
+        return _twiml(_gather(result["say"], path))
+    return _twiml(_say(result["say"]))
+
+
 def _install_twilio_signature_check(app, auth_token: str, public_url: str = ""):
     """Reject any request that Twilio did not sign.
 
@@ -155,7 +170,7 @@ def create_app(
         else:
             result = {"say": "I didn't catch that. Goodbye for now."}
 
-        return _twiml(_say(result["say"])), 200
+        return _reply(result, "/voice/checkin-response"), 200
 
     @app.route("/voice/evening-response", methods=["POST"])
     def evening_response():
@@ -173,7 +188,7 @@ def create_app(
         else:
             result = {"say": "Sleep well tonight. I'll talk to you in the morning."}
 
-        return _twiml(_say(result["say"])), 200
+        return _reply(result, "/voice/evening-response"), 200
 
     @app.route("/voice/inbound", methods=["POST"])
     def inbound_call():
@@ -209,7 +224,7 @@ def create_app(
             body = _gather(result["say"], "/voice/inbound-chat")
             return _twiml(body), 200
 
-        return _twiml(_say(result["say"])), 200
+        return _reply(result, "/voice/inbound-response"), 200
 
     @app.route("/voice/inbound-chat", methods=["POST"])
     def inbound_chat():
@@ -218,6 +233,12 @@ def create_app(
 
         if _responder and speech:
             result = _responder.handle_speech(speech, "inbound")
+            if result.get("action") == "help_requested":
+                # Said, then the call ends, as on every other route. Adding "Is
+                # there anything else?" and listening on held the line she may
+                # need for 911, after a reply that can tell her to hang up and
+                # dial it.
+                return _twiml(_say(result["say"])), 200
             body = _gather(
                 result["say"] + " Is there anything else?",
                 "/voice/inbound-chat",

@@ -138,10 +138,12 @@ When Cura calls Margaret:
 4. Waits for her response (keypad or voice)
 
 When Margaret responds:
-- **Presses 1** → Cura notes she took her medications
-- **Presses 2** → Cura alerts the family immediately
-- **Says something about a scam** → Cura reassures her and flags it
-- **Says she needs help** → Cura contacts every emergency contact
+- **Presses 2** (morning or evening call) → Cura works down the escalation ladder, family first. If it reaches
+  nobody, it tells her so and asks her to hang up and dial 911
+- **Says she needs help** → the same ladder, with the same honest answer if nobody is reached
+- **Presses 1** on the morning call → Cura thanks her. It does not record the dose yet: `cura webhook` wires no
+  medication callback
+- **Says something about a scam** → Cura reassures her and asks her to tell her family; it can't pass it on yet
 
 When Margaret calls Cura:
 - Cura answers warmly and offers to chat, answer medication questions, hear about suspicious contacts, or get help

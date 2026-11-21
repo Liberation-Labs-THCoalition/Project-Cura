@@ -97,7 +97,12 @@ class TestResponderPromise:
         got = []
         r = CuraResponder(on_help_requested=lambda m: got.append(m))
         said = r.handle_speech("I fell and I can't get up")["say"].lower()
-        assert "help is on the way" in said
+        # The reached wording, not the fallback. It no longer says "help is on
+        # the way": "reached" means a call was placed, not that anyone is
+        # coming (tests/test_keypad_promises.py, Lane cura-critical 11-21).
+        assert "alerting your family" in said
+        assert "nine one one" not in said
+        assert "help is on the way" not in said
         assert got, "Cura promised help and did not call the callback"
 
     def test_warm_wording_survives(self):
