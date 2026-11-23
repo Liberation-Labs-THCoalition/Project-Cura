@@ -48,7 +48,7 @@ cura/
   dashboard/   Family/caregiver web dashboard
   memory/      Elder profile, pattern history, medication tracking
 config/        VALUES.json templates for eldercare
-tests/         Test suite (810 tests)
+tests/         Test suite (812 tests)
 docs/          Architecture spec, regulatory notes
 ```
 
@@ -102,5 +102,5 @@ cd /home/asdf/Project-Cura
 # they had simply never run. A suite whose answer depends on which python is
 # on PATH is a suite that can report anything.
 #   .venv/bin/pip install -e '.[test]'    # if pytest is missing
-# Expected: 810 passed.
+# Expected: 812 passed.
 ```

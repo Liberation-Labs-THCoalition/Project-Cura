@@ -43,6 +43,14 @@ def main() -> None:
         "webhook", help="Start the Twilio webhook server",
     )
     webhook_parser.add_argument("--port", type=int, default=5000)
+    # 2026-11-23: Cura reaches Twilio through a tunnel on the same machine, so
+    # the server listens on this machine only. It used to bind 0.0.0.0, which
+    # opened the port to every device on the household's network and made a
+    # Mac's firewall ask the household whether to accept incoming connections.
+    # A server reached some other way can still say --host 0.0.0.0.
+    webhook_parser.add_argument("--host", type=str, default="127.0.0.1",
+                                help="Address to listen on (default 127.0.0.1, "
+                                     "this machine only)")
     webhook_parser.add_argument("--elder-name", type=str, default="friend")
     webhook_parser.add_argument("--config", type=str, default=None,
                                 help="Path to the config setup created. Required: "
@@ -138,9 +146,9 @@ def main() -> None:
             sys.exit(1)
         app = create_app(responder=responder, elder_name=args.elder_name,
                          auth_token=token, public_url=public_url)
-        print(f"Cura webhook server starting on port {args.port}")
+        print(f"Cura webhook server starting on {args.host}, port {args.port}")
         print(f"Configure Twilio to point to: http://your-server:{args.port}/voice/inbound")
-        app.run(host="0.0.0.0", port=args.port)
+        app.run(host=args.host, port=args.port)
 
     elif args.command == "run":
         _run_scheduled(args.config, args.dry_run)

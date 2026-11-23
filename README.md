@@ -127,7 +127,9 @@ Start the webhook server so Twilio can process Margaret's responses — and so M
 python -m cura webhook --port 5000 --elder-name Margaret
 ```
 
-In your Twilio dashboard, set your phone number's voice webhook to `http://your-server:5000/voice/inbound`. Now Margaret can pick up the phone and call Cura anytime — to chat, ask about her medications, report a weird call, or just hear a familiar voice.
+The server listens on this machine only (`127.0.0.1`), so other devices on the home network can't reach it. Twilio reaches it through a tunnel running on the same machine, such as a Cloudflare tunnel, at the tunnel's public address. If Twilio has to reach the machine directly instead, add `--host 0.0.0.0`.
+
+In your Twilio dashboard, set your phone number's voice webhook to `https://your-public-address/voice/inbound`. Now Margaret can pick up the phone and call Cura anytime — to chat, ask about her medications, report a weird call, or just hear a familiar voice.
 
 ### What happens on a call
 
