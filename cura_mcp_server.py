@@ -64,6 +64,15 @@ from cura.comms.caregiver_summary import CaregiverSummaryBuilder, DailySummary
 from cura.memory.companion_memory import CompanionMemory, MemoryStore
 
 
+#: What this server says when someone may be in trouble. It has no way to reach
+#: anyone, so it says so, and names who can help.
+CANNOT_REACH_ANYONE = (
+    "I can't reach your family from here. This conversation doesn't contact "
+    "anyone. If you need help now, please call 911, or call someone you trust. "
+    "I'll stay right here with you."
+)
+
+
 def _load_config(config_path: str) -> dict:
     p = Path(config_path)
     if p.exists():
@@ -180,8 +189,16 @@ def create_server(
                             "type": "string",
                             "description": "The message or transcript to analyze",
                         },
+                        "email": {
+                            "type": "string",
+                            "description": (
+                                "Optional: one whole email as raw RFC 822 text "
+                                "(a mail client's 'Show original'). Checked for "
+                                "where it really came from and where its links "
+                                "really go. Read in memory; only the verdict is "
+                                "kept, and nobody is told."),
+                        },
                     },
-                    "required": ["message"],
                 },
             ),
             Tool(
@@ -248,25 +265,10 @@ def create_server(
         lower = message.lower()
         name = profile.display_name
 
-        alert = scam_shield.analyze_response(message)
-        if alert:
-            memory.add_observation(
-                content=f"Scam indicator detected: {alert.description}",
-                category="concern",
-                source=context,
-            )
-            return _json_response({
-                "status": "scam_alert",
-                "response": scam_shield.get_reassurance(),
-                "alert": {
-                    "severity": alert.severity,
-                    "type": alert.alert_type,
-                    "keywords": alert.description,
-                    "action": alert.recommended_action,
-                },
-                "caregiver_notify": alert.severity >= 0.8,
-            })
-
+        # Crisis words before scam words, as the phone path does. Scam words
+        # came first, so "I fell and I'm in trouble" ("in trouble" is a scam
+        # keyword) got the scam reply, which never mentions 911 (batch 11
+        # verifier, MEDIUM).
         crisis_words = ["help", "emergency", "hurt", "fall", "fell", "pain", "scared"]
         if any(w in lower for w in crisis_words):
             memory.add_observation(
@@ -275,14 +277,41 @@ def create_server(
                 source=context,
                 follow_up=True,
             )
+            # This server contacts nobody: the profile it builds has no contacts
+            # and it has no phone line. It used to answer "I'm alerting your
+            # family right now. Stay calm, stay where you are." with
+            # "action": "alert_caregiver", and nothing was sent. Say what is
+            # true, report it in the data, and leave the alert to whoever reads
+            # this as a recommendation, by name.
             return _json_response({
                 "status": "crisis",
-                "response": (
-                    f"{name}, I hear you. I'm alerting your family right now. "
-                    "Stay calm, stay where you are. You're not alone."
-                ),
-                "action": "alert_caregiver",
+                "response": f"{name}, I hear you. {CANNOT_REACH_ANYONE}",
+                "caregiver_alerted": False,
+                "recommended_action": "alert_caregiver",
                 "severity": 0.9,
+            })
+
+        alert = scam_shield.analyze_response(message)
+        if alert:
+            memory.add_observation(
+                content=f"Scam indicator detected: {alert.description}",
+                category="concern",
+                source=context,
+            )
+            # Nothing here tells the family (see the crisis branch above). The
+            # reassurance used to say "I'm going to let your family know", and
+            # "caregiver_notify" read as done; it was only a threshold.
+            return _json_response({
+                "status": "scam_alert",
+                "response": scam_shield.get_reassurance(family_told=False),
+                "alert": {
+                    "severity": alert.severity,
+                    "type": alert.alert_type,
+                    "keywords": alert.description,
+                    "action": alert.recommended_action,
+                },
+                "caregiver_alerted": False,
+                "caregiver_should_be_told": alert.severity >= 0.8,
             })
 
         med_words = ["medication", "medicine", "pill", "pills", "prescription"]
@@ -342,10 +371,14 @@ def create_server(
         time_of_day = args.get("time_of_day", "morning")
         weather = args.get("weather")
 
+        # keypad=False: this server has no keypad and contacts nobody, so the
+        # script ends with a line that offers no key and promises no call. It
+        # ended "press two and I'll call your family", and "2" sent to cura_ask
+        # got small talk (batch 11 verifier, HIGH).
         if time_of_day == "evening":
-            checkin = composer.compose_evening(pulse, weather=weather)
+            checkin = composer.compose_evening(pulse, weather=weather, keypad=False)
         else:
-            checkin = composer.compose_morning(pulse, weather=weather)
+            checkin = composer.compose_morning(pulse, weather=weather, keypad=False)
 
         enrichment_data = []
         for e in checkin.enrichments:
@@ -369,6 +402,29 @@ def create_server(
         })
 
     async def _handle_scam_check(args: dict) -> list[TextContent]:
+        if args.get("email"):
+            # Thomas, 2026-11-17: "Let's also make sure email is included and
+            # scanned". The provenance scanner had no caller; this is one
+            # (docs/EMAIL_SCOPE_PLAN.md, E1). Nothing here tells anyone.
+            from cura.privacy.email_intake import plain_words, scan_raw_email
+            try:
+                verdict = scan_raw_email(args["email"])
+            except ValueError as e:
+                return _json_response({"status": "not_an_email", "error": str(e),
+                                       "caregiver_alerted": False})
+            return _json_response({
+                "status": "clean" if verdict.risk_level == "safe" else "alert",
+                "scam_detected": verdict.risk_level != "safe",
+                "source": "email",
+                "risk_level": verdict.risk_level,
+                "risk_score": verdict.risk_score,
+                "sender_domain": verdict.sender,
+                "indicators": verdict.indicators,
+                "provenance": verdict.provenance,
+                "recommended_action": verdict.recommended_action,
+                "reassurance": plain_words(verdict),
+                "caregiver_alerted": False,
+            })
         message = args.get("message", "")
         alert = scam_shield.analyze_response(message)
 
@@ -387,7 +443,8 @@ def create_server(
             "keywords_found": alert.description,
             "elder_statement": alert.elder_statement,
             "recommended_action": alert.recommended_action,
-            "reassurance": scam_shield.get_reassurance(),
+            "reassurance": scam_shield.get_reassurance(family_told=False),
+            "caregiver_alerted": False,
         })
 
     async def _handle_summary(args: dict) -> list[TextContent]:

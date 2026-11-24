@@ -138,10 +138,13 @@ Cuando Cura llama a Margaret:
 4. Espera su respuesta (por teclado o por voz)
 
 Cuando Margaret responde:
-- **Presiona 1** → Cura anota que tomó sus medicamentos
-- **Presiona 2** → Cura avisa a la familia de inmediato
-- **Dice algo sobre una estafa** → Cura la tranquiliza y lo registra
-- **Dice que necesita ayuda** → Cura contacta a todos los contactos de emergencia
+- **Presiona 2** (en la llamada de la mañana o de la noche) → Cura recorre su lista de ayuda, empezando por la
+  familia. Si no logra comunicarse con nadie, se lo dice y le pide que cuelgue y marque al 911
+- **Dice que necesita ayuda** → la misma lista, con la misma respuesta honesta si no logra comunicarse con nadie
+- **Presiona 1** en la llamada de la mañana → Cura le da las gracias. Todavía no anota la dosis: `cura webhook` no
+  tiene conectado el registro de medicamentos
+- **Dice algo sobre una estafa** → Cura la tranquiliza y le pide que se lo cuente a su familia; todavía no puede
+  avisarles por su cuenta
 
 Cuando Margaret llama a Cura:
 - Cura contesta con calidez y le ofrece platicar, responder preguntas sobre medicamentos, escuchar sobre contactos sospechosos, o pedir ayuda
@@ -164,7 +167,7 @@ Cuando Margaret llama a Cura:
 - ¿Quiere dejar de recibir las llamadas? Dígale a su cuidador/a y las pausará.
 - ¿Quiere cambiar la hora en que Cura llama? Su cuidador/a puede ajustar los horarios.
 
-**Si alguien le pide dinero o información personal**, cuénteselo a Cura durante su siguiente llamada. Ella le ayudará a saber si es una estafa y le avisará a su familia.
+**Si alguien le pide dinero o información personal**, cuénteselo a Cura durante su siguiente llamada. Ella le ayudará a saber si es una estafa. Todavía no puede avisarle a su familia por su cuenta, así que cuénteselo también a ellos.
 
 **Cura nunca va a:**
 - Pedirle su número de cuenta bancaria o de Seguro Social

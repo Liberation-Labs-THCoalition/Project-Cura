@@ -25,6 +25,31 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
+#: What the phone says when the ladder reached nobody, or there is no ladder.
+#: Every route that answers a help request ends the call after it (the TwiML
+#: is a single <Say>), so this line promises nothing that needs the line kept
+#: open. It used to end "I'm going to stay on the line with you", which was
+#: false twice over: the call ended, and on a landline the line she needs free
+#: to dial 911 is the one Cura would have been holding.
+CANNOT_REACH_ANYONE = (
+    "I'm sorry, I couldn't reach anyone for you. "
+    "If you need help, please hang up and dial nine one one, "
+    "or call someone you trust. "
+    "I'm ending this call now so your line is free."
+)
+
+#: The one key every scheduled call tells her about (cura/pulse/help_prompt.py:
+#: "press two" on every call, Thomas's design). Both call contexts honour it.
+HELP_DIGIT = "2"
+
+#: Said, inside a <Gather>, when a key is pressed that this call has no meaning
+#: for, or when she asks to hear it again. It names only the key the handler
+#: honours. It used to say "Press 1 for yes or 2 for no. Press 9 to hear the
+#: message again." with no <Gather> after it, so the call ended before she
+#: could press anything, and "2 for no" named the help key as a no.
+SAY_HELP_KEY_AGAIN = "If you need help, press two."
+
+
 class CuraResponder:
     """Process responses from elders during and after calls.
 
@@ -122,19 +147,79 @@ class CuraResponder:
                 "contacted. Cura must not be placing live calls in this state.",
                 context,
             )
-        return ("I can't reach anyone for you myself right now. "
-                "If you need help, please hang up and dial nine one one. "
-                "I'm going to stay on the line with you.")
+        return CANNOT_REACH_ANYONE
 
-    def handle_dtmf(self, digit: str, call_context: str = "checkin") -> dict[str, str]:
+    def _scam_reply(self, transcript: str) -> str:
+        """Return what Cura may truthfully say after she reports a scam.
+
+        Cura said "I'm going to let your family know so they can help look into
+        it" whatever happened. Production builds the responder with
+        on_help_requested only (__main__._build_responder), so on_scam_report
+        was None and the report went nowhere. Someone who believes Cura told
+        her family does not tell them herself.
+
+        Same rule as _promise_help: the callback's verdict decides. False or an
+        exception: not passed on, and Cura asks her to tell them. None or
+        anything else: passed on, or under way.
+        """
+        passed_on = False
+        if self._on_scam:
+            try:
+                passed_on = self._on_scam(transcript) is not False
+            except Exception:
+                logger.exception("SCAM REPORT CALLBACK RAISED. Nobody can be "
+                                 "assumed told.")
+        else:
+            logger.warning("SCAM REPORTED WITH NO CALLBACK WIRED. Nobody was "
+                           "told; Cura asked her to tell her family herself.")
+        if passed_on:
+            return ("Thank you for telling me about that. You did the right thing. "
+                    "I'm going to let your family know so they can help look into it. "
+                    "Remember, it's never wrong to check with someone you trust.")
+        return ("Thank you for telling me about that. You did the right thing. "
+                "I can't pass this on to your family myself, so please tell them, "
+                "or someone else you trust, before you give out any information "
+                "or send any money.")
+
+    def handle_dtmf(self, digit: str, call_context: str = "checkin") -> dict[str, Any]:
         """Handle a keypad press during a call.
 
-        Returns a dict with 'action' and 'twiml_response' (what to say next).
+        Returns a dict with 'action' and 'say' (what to say next). When 'listen'
+        is True the reply invites another key, and the webhook must say it
+        inside a <Gather> so the key is heard.
+
+        A digit means what the call she is on told her it means. Every scheduled
+        call, morning and evening, ends with the press-two line
+        (cura/pulse/help_prompt.py). The evening handler read 2 as "all good"
+        and answered "Good. Sleep well tonight." with nothing sent, so on the
+        evening call the one key she was told about turned a cry for help into
+        goodnight (batch 11 verifier, CRITICAL, 2026-11-14; there since
+        58dbb0f). Now 2 is help on both calls.
+
+        What she hears after a help request is _promise_help's answer, always.
+        The evening 1 branch called _promise_help and then threw the answer
+        away, so it said "I'll let your family know" when the ladder had
+        reached nobody (same review, HIGH).
+
+        When someone was reached, the reply says what Cura did and nothing
+        about what happens next. "Reached" means a call was placed (the ladder
+        counts a call Twilio accepted, cura/comms/escalation.py place_call), so
+        "someone will check on you soon" and "help is on the way" were promises
+        no handler keeps.
         """
         now = datetime.now(timezone.utc)
         self._response_log.append({
             "timestamp": now, "type": "dtmf", "digit": digit, "context": call_context,
         })
+
+        if call_context in ("checkin", "evening") and digit == HELP_DIGIT:
+            return {
+                "action": "help_requested",
+                "say": self._promise_help(
+                    "Elder pressed 2 — needs help"
+                    + (" (evening call)" if call_context == "evening" else ""),
+                    "I'm letting your family know right now. You're not alone."),
+            }
 
         if call_context == "checkin":
             if digit == "1":
@@ -145,39 +230,38 @@ class CuraResponder:
                     "say": "Thank you. I'm glad you're staying on top of your medications. "
                            "Have a wonderful day.",
                 }
-            elif digit == "2":
-                return {
-                    "action": "help_requested",
-                    "say": self._promise_help(
-                        "Elder pressed 2 — needs help",
-                        "I'm letting your family know right now. "
-                        "Stay where you are and someone will check on you soon. "
-                        "You're not alone."),
-                }
             elif digit == "9":
+                # Not "let me repeat that": the webhook does not have the call's
+                # script (`cura run` composed it in another process), so the
+                # whole message cannot be replayed. The part that matters can.
                 return {
                     "action": "repeat",
-                    "say": "Of course, let me repeat that.",
+                    "say": f"Of course. The most important part: {SAY_HELP_KEY_AGAIN}",
+                    "listen": True,
                 }
 
         if call_context == "evening":
             if digit == "1":
-                self._promise_help("Elder needs something before bed",
-                                   "I'll let your family know.")
+                # The evening call asks "Is there anything you need before
+                # bed?" and names no key for yes. 1 stays a request for the
+                # family, as it was; an unexplained key at bedtime goes to the
+                # family rather than to goodnight.
                 return {
                     "action": "help_requested",
-                    "say": "I'll let your family know. Is there anything else?",
+                    "say": self._promise_help("Elder needs something before bed",
+                                              "I'll let your family know."),
                 }
-            elif digit == "2":
+            elif digit == "9":
                 return {
-                    "action": "all_good",
-                    "say": "Good. Sleep well tonight. I'll talk to you in the morning.",
+                    "action": "repeat",
+                    "say": f"Of course. The most important part: {SAY_HELP_KEY_AGAIN}",
+                    "listen": True,
                 }
 
         return {
             "action": "unknown",
-            "say": "I didn't understand that. Press 1 for yes or 2 for no. "
-                   "Press 9 to hear the message again.",
+            "say": f"I didn't catch that. {SAY_HELP_KEY_AGAIN}",
+            "listen": True,
         }
 
     def handle_speech(self, transcript: str, call_context: str = "checkin") -> dict[str, str]:
@@ -200,23 +284,21 @@ class CuraResponder:
         if any(w in lower for w in ["help", "emergency", "fall", "fell", "hurt", "pain"]):
             return {
                 "action": "help_requested",
+                # "Help is on the way" is gone: a placed call is not help on
+                # its way (see handle_dtmf).
                 "say": self._promise_help(
                     f"Elder said: {transcript[:200]}",
                     "I'm alerting your family right now. Stay calm, stay safe. "
-                    "Help is on the way."),
+                    "You're not alone."),
             }
 
         if any(w in lower for w in [
             "someone called", "asked for money", "gift card", "wire",
             "scam", "suspicious", "weird call", "strange email",
         ]):
-            if self._on_scam:
-                self._on_scam(transcript)
             return {
                 "action": "scam_report",
-                "say": "Thank you for telling me about that. You did the right thing. "
-                       "I'm going to let your family know so they can help look into it. "
-                       "Remember, it's never wrong to check with someone you trust.",
+                "say": self._scam_reply(transcript),
             }
 
         # ONLY after help and scam have declined. A pending question must never
@@ -288,17 +370,21 @@ class CuraResponder:
         elif digit == "4":
             # Through the guard, like every other help path. This one called the
             # callback directly and promised regardless (Vera, 2026-09-24).
+            # "Stay on the line with me" is gone: the route ends the call after
+            # this line, which is right, because a line Cura holds is a line
+            # the family cannot call back on.
             return {
                 "action": "help_requested",
                 "say": self._promise_help(
                     f"{elder_name} called and pressed 4 — needs help",
                     when_reachable="I'm contacting your family right now. "
-                                   "Stay on the line with me. You're not alone."),
+                                   "You're not alone."),
             }
         return {
             "action": "unknown",
             "say": "I didn't catch that. Just tell me what's on your mind, "
                    "or press 4 if you need help right away.",
+            "listen": True,
         }
 
     @property

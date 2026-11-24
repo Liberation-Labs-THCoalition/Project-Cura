@@ -79,10 +79,19 @@ class ComposedCheckin:
 
 
 
-def _help_line(days_heard: int, rotation: int) -> "HelpPrompt | None":
-    """The graduating press-two line. See cura/pulse/help_prompt.py."""
-    from cura.pulse.help_prompt import help_prompt
-    return help_prompt(days_heard, inbound=False, rotation=rotation)
+def _help_line(days_heard: int, rotation: int, keypad: bool = True) -> str:
+    """The line that tells her how to get help.
+
+    With a keypad and a ladder behind it (the phone), the graduating press-two
+    line: see cura/pulse/help_prompt.py. Without (the MCP server, the console),
+    a line that offers no key and promises no call, because nothing there can
+    hear a key or place a call.
+    """
+    from cura.pulse.help_prompt import NO_KEYPAD_HELP_LINE, help_prompt
+    if not keypad:
+        return NO_KEYPAD_HELP_LINE
+    hp = help_prompt(days_heard, inbound=False, rotation=rotation)
+    return hp.text if hp else ""
 
 
 class CheckinComposer:
@@ -119,6 +128,7 @@ class CheckinComposer:
         yesterday_topic: str = "",
         days_heard: int = 0,
         rotation: int = 0,
+        keypad: bool = True,
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_morning_greeting()
         med_reminder = pulse_config.generate_medication_reminder("morning")
@@ -153,7 +163,7 @@ class CheckinComposer:
             enrichments=enrichments,
             wearable_observations=wearable_obs,
             scam_addition=scam,
-            help_prompt=(hp.text if (hp := _help_line(days_heard, rotation)) else ""),
+            help_prompt=_help_line(days_heard, rotation, keypad),
         )
 
     def compose_evening(
@@ -162,6 +172,7 @@ class CheckinComposer:
         weather: dict | None = None,
         days_heard: int = 0,
         rotation: int = 0,
+        keypad: bool = True,
     ) -> ComposedCheckin:
         greeting = pulse_config.generate_evening_summary()
 
@@ -193,7 +204,7 @@ class CheckinComposer:
             enrichments=enrichments,
             wearable_observations=wearable_obs,
             scam_addition=scam,
-            help_prompt=(hp.text if (hp := _help_line(days_heard, rotation)) else ""),
+            help_prompt=_help_line(days_heard, rotation, keypad),
         )
 
     def _memory_touches(self, name: str) -> list[str]:

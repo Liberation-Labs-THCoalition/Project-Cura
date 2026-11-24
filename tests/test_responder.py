@@ -30,11 +30,16 @@ class TestDTMF:
         result = responder.handle_dtmf("7", "checkin")
         assert result["action"] == "unknown"
 
-    def test_evening_press_2_goodnight(self):
-        responder = CuraResponder()
+    def test_evening_press_2_requests_help(self):
+        """This test used to assert the defect: 2 on the evening call meant
+        "all good" and said "Sleep well tonight", while the evening call's last
+        line tells her to press two for her family (batch 11 CRITICAL)."""
+        alerts = []
+        responder = CuraResponder(on_help_requested=lambda msg: alerts.append(msg))
         result = responder.handle_dtmf("2", "evening")
-        assert result["action"] == "all_good"
-        assert "sleep well" in result["say"].lower()
+        assert result["action"] == "help_requested"
+        assert len(alerts) == 1
+        assert "sleep well" not in result["say"].lower()
 
 
 class TestSpeech:

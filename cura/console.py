@@ -24,6 +24,15 @@ from cura.privacy.scam_shield import ScamShield
 from cura.sensors.wearable import WearableAnalyzer
 
 
+#: What the console says when someone may be in trouble. The console has no way
+#: to reach anyone, so it says so, and names who can help.
+CANNOT_REACH_ANYONE = (
+    "I can't reach your family from here. This chat doesn't contact anyone. "
+    "If you need help now, please call 911, or call someone you trust. "
+    "I'll stay right here with you."
+)
+
+
 def _timestamp() -> str:
     return datetime.now().strftime("%I:%M %p")
 
@@ -43,7 +52,12 @@ def _elder_input(name: str) -> str:
 def run_demo(config: EldercarePulseConfig, weather: dict | None = None) -> None:
     """Run a simulated morning check-in."""
     composer = CheckinComposer()
-    checkin = composer.compose_morning(config, weather=weather)
+    # keypad=False: nothing in the console can hear a key or call anyone, and
+    # this profile has no phone and no contacts. The demo printed "If you ever
+    # need help, press two and I'll call your family" for it (batch 11
+    # verifier, MEDIUM). What the phone says instead is told below, as
+    # narration, not in Cura's voice.
+    checkin = composer.compose_morning(config, weather=weather, keypad=False)
     name = config.profile.display_name
 
     print("\n" + "=" * 60)
@@ -64,6 +78,9 @@ def run_demo(config: EldercarePulseConfig, weather: dict | None = None) -> None:
     print("\n" + "=" * 60)
     print("  That's what a morning check-in sounds like.")
     print("  Cura calls twice a day, warm and consistent.")
+    print("  On a real call the last line is different: it tells her to press")
+    print("  two for her family. Cura only places real calls once setup has")
+    print("  someone it can reach. This demo calls nobody.")
     print("=" * 60 + "\n")
 
 
@@ -102,19 +119,29 @@ def run_interactive(config: EldercarePulseConfig) -> None:
             print("    - Just chat")
             continue
 
+        # Distress before scam words, as the phone path does: "I fell and I'm
+        # in trouble" ("in trouble" is a scam keyword) got the scam reply,
+        # which never mentions 911 (batch 11 verifier, MEDIUM).
+        # Check for distress
+        if any(w in lower for w in ["help", "emergency", "hurt", "fall", "fell", "pain", "scared"]):
+            # The console contacts nobody: no phone line, no contacts, no
+            # escalation callback. It used to say "I'm alerting your family
+            # right now. Stay calm, stay where you are." Nothing was sent, and
+            # "stay where you are" told a person who had fallen to wait for help
+            # that was not coming. Say what is true, and who can help.
+            _cura_says(f"{name}, I hear you. {CANNOT_REACH_ANYONE}")
+            continue
+
         # Check for scam indicators
         alert = scam_shield.analyze_response(response)
         if alert:
-            _cura_says(scam_shield.get_reassurance())
+            # The alert stays in this process and is gone when the chat ends;
+            # nobody is told. This used to add "I'm flagging this for your
+            # family right away" on top of a reassurance that said the same.
+            _cura_says(scam_shield.get_reassurance(family_told=False))
             if alert.severity >= 0.8:
-                _cura_says("I'm flagging this for your family right away. "
-                           "You did absolutely the right thing telling me.")
-            continue
-
-        # Check for distress
-        if any(w in lower for w in ["help", "emergency", "hurt", "fall", "fell", "pain", "scared"]):
-            _cura_says(f"{name}, I hear you. I'm alerting your family right now. "
-                       "Stay calm, stay where you are. You're not alone.")
+                _cura_says("This one worries me, so please tell them today if "
+                           "you can. You did absolutely the right thing telling me.")
             continue
 
         # Medication questions

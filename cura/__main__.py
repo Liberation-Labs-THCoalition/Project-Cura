@@ -75,7 +75,17 @@ def main() -> None:
     subparsers.add_parser(
         "add-phone", help="Turn on real phone calls (needs a Twilio account)")
 
+    scan_parser = subparsers.add_parser(
+        "scan-email", help="Check one saved email (.eml) for signs of a scam. "
+                           "Nothing is stored or sent.")
+    scan_parser.add_argument("path", type=str,
+                             help="A saved email: a .eml file, or the text a mail "
+                                  "program shows as 'Show original'")
+
     args = parser.parse_args()
+
+    if args.command == "scan-email":
+        sys.exit(_scan_email(args.path))
 
     if args.command == "setup":
         again = getattr(args, "again", False)
@@ -155,6 +165,37 @@ def main() -> None:
 
 
 
+
+
+def _scan_email(path: str) -> int:
+    """Check one saved email and say what was found, in plain words.
+
+    The first step of Thomas's email widening (2026-11-17; docs/
+    EMAIL_SCOPE_PLAN.md, E1): a person chooses one message to show Cura. No
+    mailbox is opened and no credential is needed. The message is read in
+    memory; nothing is written, logged or sent, so the reply never says anyone
+    was told.
+    """
+    from pathlib import Path as _P
+    from cura.privacy.email_intake import plain_words, scan_raw_email
+    try:
+        raw = _P(path).read_bytes()
+    except OSError as e:
+        print(f"\n  Cura couldn't open that file: {e.strerror or e}.\n")
+        return 1
+    try:
+        verdict = scan_raw_email(raw)
+    except ValueError:
+        print("\n  That file doesn't look like an email. Save the message as a")
+        print("  .eml file, or copy what your mail program shows as")
+        print("  'Show original', and try again.\n")
+        return 1
+    print()
+    print(f"  {plain_words(verdict)}")
+    print()
+    print("  Cura didn't keep this email and didn't tell anyone about it.")
+    print()
+    return 0
 
 
 def _weather(config_path: str) -> dict | None:
