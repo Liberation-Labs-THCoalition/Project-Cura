@@ -127,7 +127,9 @@ Inicie el servidor webhook para que Twilio pueda procesar las respuestas de Marg
 python -m cura webhook --port 5000 --elder-name Margaret
 ```
 
-En su panel de control de Twilio, configure el webhook de voz de su número telefónico a `http://your-server:5000/voice/inbound`. Ahora Margaret puede levantar el teléfono y llamar a Cura en cualquier momento — para platicar, preguntar sobre sus medicamentos, reportar una llamada extraña, o simplemente escuchar una voz conocida.
+El servidor escucha solo en esta computadora (`127.0.0.1`), así que otros aparatos de la red de la casa no pueden alcanzarlo. Twilio llega a él por un túnel que corre en la misma computadora, por ejemplo un túnel de Cloudflare, en la dirección pública del túnel. Si Twilio tiene que llegar a la computadora directamente, agregue `--host 0.0.0.0`.
+
+En su panel de control de Twilio, configure el webhook de voz de su número telefónico a `https://su-direccion-publica/voice/inbound`. Ahora Margaret puede levantar el teléfono y llamar a Cura en cualquier momento — para platicar, preguntar sobre sus medicamentos, reportar una llamada extraña, o simplemente escuchar una voz conocida.
 
 ### Qué Pasa Durante una Llamada
 
