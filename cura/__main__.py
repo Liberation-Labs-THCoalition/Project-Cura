@@ -51,7 +51,9 @@ def main() -> None:
     webhook_parser.add_argument("--host", type=str, default="127.0.0.1",
                                 help="Address to listen on (default 127.0.0.1, "
                                      "this machine only)")
-    webhook_parser.add_argument("--elder-name", type=str, default="friend")
+    # 2026-11-24: with no --elder-name, the name comes from the config `cura setup` wrote (preferred name, else
+    # name), so a daemon that can't be given flags still greets the person by name. "friend" is the last resort.
+    webhook_parser.add_argument("--elder-name", type=str, default=None)
     webhook_parser.add_argument("--config", type=str, default=None,
                                 help="Path to the config setup created. Required: "
                                      "without it Cura cannot summon help.")
@@ -60,8 +62,11 @@ def main() -> None:
     run_parser = subparsers.add_parser(
         "run", help="Start scheduled daily check-ins",
     )
-    run_parser.add_argument("--config", type=str, required=True,
-                            help="Path to elder config JSON file")
+    # 2026-11-24 (Nexus's read of deploy/macos/run.sh): not required any more. Like `cura webhook`, `cura run` uses
+    # the config `cura setup` wrote when there is exactly one, and explains when there is none or several. Required,
+    # the daemon's plain `cura run` failed at argument parsing and restarted forever.
+    run_parser.add_argument("--config", type=str, default=None,
+                            help="Path to elder config JSON file (default: the one `cura setup` wrote)")
     run_parser.add_argument("--dry-run", action="store_true",
                             help="Log calls without actually dialing")
 
@@ -154,14 +159,20 @@ def main() -> None:
             print("  medication was taken. Run this first:\n")
             print("      cura add-phone\n")
             sys.exit(1)
-        app = create_app(responder=responder, elder_name=args.elder_name,
+        elder_name = args.elder_name or _configured_name(cfg_path) or "friend"
+        app = create_app(responder=responder, elder_name=elder_name,
                          auth_token=token, public_url=public_url)
         print(f"Cura webhook server starting on {args.host}, port {args.port}")
         print(f"Configure Twilio to point to: http://your-server:{args.port}/voice/inbound")
         app.run(host=args.host, port=args.port)
 
     elif args.command == "run":
-        _run_scheduled(args.config, args.dry_run)
+        cfg_path = args.config or _default_config_path()
+        if not cfg_path:
+            _explain_no_config("Cura needs to know who to call before it can place check-in calls.",
+                               command="run")
+            sys.exit(1)
+        _run_scheduled(cfg_path, args.dry_run)
 
     else:
         parser.print_help()
@@ -429,6 +440,16 @@ def _default_config_path():
         pass
     found = _config_candidates()
     return str(found[0]) if len(found) == 1 else None
+
+
+def _configured_name(config_path: str) -> str:
+    """The name the person goes by, from the config `cura setup` wrote: preferred name, else name, else ''."""
+    import json
+    try:
+        cfg = json.loads(open(config_path, encoding="utf-8").read())
+    except Exception:
+        return ""
+    return str(cfg.get("preferred_name") or cfg.get("name") or "").strip()
 
 
 def _explain_no_config(preamble: str = "", command: str = "run") -> None:
